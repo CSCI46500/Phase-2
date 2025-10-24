@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+
+# ---- INSTALL ----
+if [ "$1" = "install" ]; then
+    if [ -f dependencies.txt ]; then
+        pip install -r dependencies.txt
+    fi
+    exit 0
+fi
+
+# ---- TEST ----
+if [ "$1" = "test" ]; then
+    python3 -m pytest tests/test.py -q --disable-warnings
+    exit 0
+fi
+
+# ---- URLS ----
+if [ -f "$1" ]; then
+    python3 main.py "$1"
+    exit 0
+fi
+
+# ---- FALLBACK ----
+echo "Unknown command: $1"
+exit 1
