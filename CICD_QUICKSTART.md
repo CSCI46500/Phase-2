@@ -1,6 +1,6 @@
 # CI/CD Quick Start Guide
 
-## 🚀 Fast Setup (5 Minutes)
+## Fast Setup (5 Minutes)
 
 This guide will get you up and running with CI/CD in 5 minutes using AWS Elastic Beanstalk (the easiest option).
 
@@ -63,8 +63,8 @@ Value: phase2-env
 
 GitHub repo → Settings → Branches → Add rule:
 - Branch name: `main`
-- ✅ Require pull request before merging
-- ✅ Require status checks to pass
+- Require pull request before merging
+- Require status checks to pass
 - Select: "Run Automated Tests"
 - Save
 
@@ -85,23 +85,22 @@ git push origin test-cicd
 
 Now:
 1. Go to GitHub and create a Pull Request
-2. Watch the "Actions" tab - tests will run automatically! ✅
+2. Watch the "Actions" tab - tests will run automatically! 
 3. Once tests pass, merge the PR
-4. Watch "Actions" again - deployment will start automatically! 🚀
+4. Watch "Actions" again - deployment will start automatically! 
 5. Check your AWS console to see the deployment
 
-## 🎉 That's it!
 
 You now have:
-- ✅ Automated tests on every PR
-- ✅ Automatic deployment to AWS on merge
-- ✅ Professional CI/CD pipeline
+- Automated tests on every PR
+- Automatic deployment to AWS on merge
+- Professional CI/CD pipeline
 
 ## What Happens Now?
 
 ### When you create a Pull Request:
 1. GitHub Actions automatically runs your tests
-2. You see ✅ or ❌ on the PR
+2. You see a check or an X on the PR
 3. You can only merge if tests pass
 
 ### When you merge to main:
@@ -221,10 +220,10 @@ See `.github/workflows/README.md` for:
 2. Create branch: git checkout -b feature-x
 3. Push: git push origin feature-x
 4. Create PR on GitHub
-5. ✅ Wait for CI to pass
+5. Wait for CI to pass
 6. Get code review
 7. Merge PR
-8. 🚀 Automatic deployment!
+8. Automatic deployment!
 9. Verify in production
 ```
 
@@ -244,7 +243,7 @@ Create PR
 │  • Code quality     │
 └──────────┬──────────┘
            ↓
-      ✅ Pass / ❌ Fail
+       Pass /  Fail
            ↓
       Merge to main
            ↓
@@ -262,7 +261,7 @@ Create PR
 │  • Monitoring       │
 └─────────────────────┘
            ↓
-      🎉 Live!
+       Live!
 ```
 
 ## Files Created
