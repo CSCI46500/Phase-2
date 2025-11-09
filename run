@@ -11,8 +11,8 @@ fi
 
 # ---- TEST ----
 if [ "$1" = "test" ]; then
-    python3 -m pytest tests/test.py -q --disable-warnings
-    exit 0
+    python3 main.py test
+    exit $?
 fi
 
 # ---- URLS ----
