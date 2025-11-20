@@ -30,7 +30,6 @@ class MetricsEvaluator:
     Orchestrates parallel evaluation of all metrics.
     """
 
-    # Phase 2 weights
     WEIGHTS = {
         "license": 0.2,
         "size": 0.1,

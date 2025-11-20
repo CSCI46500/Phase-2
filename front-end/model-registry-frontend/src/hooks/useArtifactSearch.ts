@@ -32,21 +32,21 @@ export const useArtifactSearch = (
 
       try {
         let result: SearchResult;
-        
+
         switch (searchType) {
           case 'regex':
-            result = await modelRegistryAPI.searchByRegex(searchTerm);
+            result = await modelRegistryAPI.searchPackages(undefined, undefined, searchTerm);
             break;
           case 'id':
-            result = await modelRegistryAPI.getArtifactById(searchTerm);
+            result = await modelRegistryAPI.getPackageById(searchTerm);
             break;
           case 'all':
-            result = await modelRegistryAPI.getAllArtifacts();
+            result = await modelRegistryAPI.getAllPackages();
             break;
           default:
             throw new Error('Invalid search type');
         }
-        
+
         setData(result);
       } catch (err) {
         setError(err as ApiError);
