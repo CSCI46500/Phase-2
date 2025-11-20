@@ -4,6 +4,7 @@ Implements all CRUD endpoints as per CRUD_IMPLEMENTATION_PLAN.md
 """
 from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
@@ -40,6 +41,20 @@ app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
     description="Model Registry API with CRUD operations for ML models"
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative dev port
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

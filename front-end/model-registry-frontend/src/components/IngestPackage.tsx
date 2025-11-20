@@ -3,7 +3,9 @@ import { modelRegistryAPI } from '../services/api';
 import type { IngestResponse, ApiError } from '../types';
 
 const IngestPackage: React.FC = () => {
-  const [modelUrl, setModelUrl] = useState<string>('');
+  const [modelId, setModelId] = useState<string>('');
+  const [version, setVersion] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [response, setResponse] = useState<IngestResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -15,9 +17,24 @@ const IngestPackage: React.FC = () => {
     setResponse(null);
 
     try {
-      const result = await modelRegistryAPI.ingestPackage(modelUrl);
+      // Extract model ID from URL if a full URL is provided
+      let extractedModelId = modelId;
+      if (modelId.includes('huggingface.co/')) {
+        const match = modelId.match(/huggingface\.co\/(.+?)(?:\?|$)/);
+        if (match) {
+          extractedModelId = match[1];
+        }
+      }
+
+      const result = await modelRegistryAPI.ingestPackage(
+        extractedModelId,
+        version || undefined,
+        description || undefined
+      );
       setResponse(result);
-      setModelUrl(''); // Clear input on success
+      setModelId(''); // Clear input on success
+      setVersion('');
+      setDescription('');
     } catch (err) {
       setError(err as ApiError);
     } finally {
@@ -25,8 +42,16 @@ const IngestPackage: React.FC = () => {
     }
   };
 
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    setModelUrl(e.target.value);
+  const handleModelIdChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setModelId(e.target.value);
+  };
+
+  const handleVersionChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setVersion(e.target.value);
+  };
+
+  const handleDescriptionChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setDescription(e.target.value);
   };
 
   return (
@@ -35,19 +60,44 @@ const IngestPackage: React.FC = () => {
       
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label htmlFor="modelUrl">HuggingFace Model URL:</label>
+          <label htmlFor="modelId">HuggingFace Model ID or URL:</label>
           <input
             type="text"
-            id="modelUrl"
-            value={modelUrl}
-            onChange={handleInputChange}
-            placeholder="https://huggingface.co/username/model-name"
+            id="modelId"
+            value={modelId}
+            onChange={handleModelIdChange}
+            placeholder="username/model-name or https://huggingface.co/username/model-name"
             disabled={loading}
             required
           />
+          <small>Example: bert-base-uncased or https://huggingface.co/bert-base-uncased</small>
         </div>
-        
-        <button type="submit" disabled={loading || !modelUrl.trim()}>
+
+        <div className="form-group">
+          <label htmlFor="version">Version (optional):</label>
+          <input
+            type="text"
+            id="version"
+            value={version}
+            onChange={handleVersionChange}
+            placeholder="1.0.0"
+            disabled={loading}
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="description">Description (optional):</label>
+          <input
+            type="text"
+            id="description"
+            value={description}
+            onChange={handleDescriptionChange}
+            placeholder="Model description"
+            disabled={loading}
+          />
+        </div>
+
+        <button type="submit" disabled={loading || !modelId.trim()}>
           {loading ? 'Ingesting...' : 'Ingest Package'}
         </button>
       </form>
