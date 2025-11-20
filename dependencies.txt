@@ -1,6 +1,0 @@
-pytest
-pytest-cov
-huggingface_hub
-requests
-python-dotenv
-anthropic

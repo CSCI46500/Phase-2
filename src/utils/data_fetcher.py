@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from huggingface_hub import HfApi, ModelInfo
-from strip import strip_html, strip_markdown
+from src.utils.strip import strip_html, strip_markdown
 
 logger = logging.getLogger(__name__)
 
