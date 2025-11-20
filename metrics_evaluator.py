@@ -16,7 +16,10 @@ from metric_calculators import (
     PerformanceClaimsMetric,
     DatasetCodeScoreMetric,
     DatasetQualityMetric,
-    CodeQualityMetric
+    CodeQualityMetric,
+    ReviewednessMetric,
+    ReproducibilityMetric,
+    TreescoreMetric
 )
 
 logger = logging.getLogger(__name__)
@@ -27,21 +30,33 @@ class MetricsEvaluator:
     Orchestrates parallel evaluation of all metrics.
     """
 
-    # Phase 2 weights
+    # Phase 2 weights (adjusted to include new metrics)
     WEIGHTS = {
-        "license": 0.2,
-        "size": 0.1,
-        "ramp": 0.12,
-        "bus": 0.12,
-        "perf": 0.1,
-        "ds_code": 0.1,
-        "ds_quality": 0.13,
-        "code_quality": 0.13
+        "license": 0.18,
+        "size": 0.09,
+        "ramp": 0.11,
+        "bus": 0.11,
+        "perf": 0.09,
+        "ds_code": 0.09,
+        "ds_quality": 0.12,
+        "code_quality": 0.12,
+        "reviewedness": 0.03,
+        "reproducibility": 0.03,
+        "treescore": 0.03
     }
 
-    def __init__(self, model_url: str, dataset_url: str, code_url: str):
-        """Initialize evaluator with resource URLs."""
+    def __init__(self, model_url: str, dataset_url: str, code_url: str, registry=None):
+        """
+        Initialize evaluator with resource URLs.
+
+        Args:
+            model_url: URL to HuggingFace model
+            dataset_url: URL to HuggingFace dataset
+            code_url: URL to GitHub repository
+            registry: Optional registry object for treescore calculation
+        """
         self.fetcher = DataFetcher(model_url, dataset_url, code_url)
+        self.registry = registry
 
         # Initialize metric calculators
         self.metrics = {
@@ -52,7 +67,10 @@ class MetricsEvaluator:
             'performance_claims': PerformanceClaimsMetric(),
             'dataset_and_code_score': DatasetCodeScoreMetric(),
             'dataset_quality': DatasetQualityMetric(),
-            'code_quality': CodeQualityMetric()
+            'code_quality': CodeQualityMetric(),
+            'reviewedness': ReviewednessMetric(),
+            'reproducibility': ReproducibilityMetric(),
+            'treescore': TreescoreMetric(registry=registry)
         }
 
     def _execute_metric(self, metric_name: str, metric_calculator) -> Dict[str, Any]:
@@ -113,10 +131,18 @@ class MetricsEvaluator:
         ds_code_score = metric_results['dataset_and_code_score']['score']
         ds_quality = metric_results['dataset_quality']['score']
         code_quality = metric_results['code_quality']['score']
+        reviewedness_score = metric_results['reviewedness']['score']
+        reproducibility_score = metric_results['reproducibility']['score']
+        treescore_score = metric_results['treescore']['score']
 
         # Handle size_score (it's a dictionary)
         if isinstance(size_score, dict):
             size_score = min(size_score.values()) if size_score else 0.0
+
+        # Handle reviewedness (can be -1 if no GitHub repo)
+        # Treat -1 as neutral (0.5) for scoring purposes
+        if reviewedness_score == -1:
+            reviewedness_score = 0.5
 
         # Calculate weighted sum
         net_score = (
@@ -127,7 +153,10 @@ class MetricsEvaluator:
             perf_score * self.WEIGHTS["perf"] +
             ds_code_score * self.WEIGHTS["ds_code"] +
             ds_quality * self.WEIGHTS["ds_quality"] +
-            code_quality * self.WEIGHTS["code_quality"]
+            code_quality * self.WEIGHTS["code_quality"] +
+            reviewedness_score * self.WEIGHTS["reviewedness"] +
+            reproducibility_score * self.WEIGHTS["reproducibility"] +
+            treescore_score * self.WEIGHTS["treescore"]
         )
 
         # Clamp to [0.0, 1.0] and round
@@ -141,7 +170,7 @@ class MetricsEvaluator:
         """Format results in NDJSON-compatible ordered structure."""
         model_name = self.fetcher.get_model_name()
 
-        # Build ordered dictionary matching Phase 1 output format
+        # Build ordered dictionary matching Phase 2 output format
         output = OrderedDict([
             ("name", model_name),
             ("category", "MODEL"),
@@ -163,6 +192,13 @@ class MetricsEvaluator:
             ("dataset_quality_latency", metric_results['dataset_quality']['latency']),
             ("code_quality", metric_results['code_quality']['score']),
             ("code_quality_latency", metric_results['code_quality']['latency']),
+            # Phase 2 new metrics
+            ("reviewedness", metric_results['reviewedness']['score']),
+            ("reviewedness_latency", metric_results['reviewedness']['latency']),
+            ("reproducibility", metric_results['reproducibility']['score']),
+            ("reproducibility_latency", metric_results['reproducibility']['latency']),
+            ("treescore", metric_results['treescore']['score']),
+            ("treescore_latency", metric_results['treescore']['latency']),
         ])
 
         return output

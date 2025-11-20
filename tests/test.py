@@ -598,14 +598,18 @@ def test_metrics_evaluator_weights():
     evaluator = MetricsEvaluator("", "", "")
     weights = evaluator.WEIGHTS
 
-    assert weights["license"] == 0.2
-    assert weights["size"] == 0.1
-    assert weights["ramp"] == 0.12
-    assert weights["bus"] == 0.12
-    assert weights["perf"] == 0.1
-    assert weights["ds_code"] == 0.1
-    assert weights["ds_quality"] == 0.13
-    assert weights["code_quality"] == 0.13
+    # Updated Phase 2 weights with new metrics
+    assert weights["license"] == 0.18
+    assert weights["size"] == 0.09
+    assert weights["ramp"] == 0.11
+    assert weights["bus"] == 0.11
+    assert weights["perf"] == 0.09
+    assert weights["ds_code"] == 0.09
+    assert weights["ds_quality"] == 0.12
+    assert weights["code_quality"] == 0.12
+    assert weights["reviewedness"] == 0.03
+    assert weights["reproducibility"] == 0.03
+    assert weights["treescore"] == 0.03
     assert sum(weights.values()) == 1.0
 
 
@@ -883,3 +887,325 @@ def test_dataset_quality_with_keywords():
             fetcher = DataFetcher()
             score, _ = metric.calculate(fetcher)
             assert score >= 0.5  # Should have high score
+
+
+# ============================================================================
+# Phase 2 New Metrics Tests
+# ============================================================================
+
+def test_reviewedness_no_github():
+    """Test reviewedness returns -1 when no GitHub repo."""
+    from metric_calculators import ReviewednessMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReviewednessMetric()
+
+    with patch.object(DataFetcher, 'has_code_url', return_value=False):
+        fetcher = DataFetcher()
+        score, latency = metric.calculate(fetcher)
+        assert score == -1.0
+        assert latency >= 0
+
+
+def test_reviewedness_with_github():
+    """Test reviewedness calculates PR review coverage."""
+    from metric_calculators import ReviewednessMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReviewednessMetric()
+
+    # Mock 80% of code reviewed through PRs
+    with patch.object(DataFetcher, 'has_code_url', return_value=True):
+        with patch.object(DataFetcher, 'get_pr_review_stats', return_value=(800, 1000)):
+            fetcher = DataFetcher()
+            score, latency = metric.calculate(fetcher)
+            assert score == 0.8
+            assert latency >= 0
+
+
+def test_reviewedness_no_code():
+    """Test reviewedness with no code in repository."""
+    from metric_calculators import ReviewednessMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReviewednessMetric()
+
+    with patch.object(DataFetcher, 'has_code_url', return_value=True):
+        with patch.object(DataFetcher, 'get_pr_review_stats', return_value=(0, 0)):
+            fetcher = DataFetcher()
+            score, latency = metric.calculate(fetcher)
+            assert score == 0.0
+
+
+def test_reproducibility_no_code():
+    """Test reproducibility returns 0 when no code in model card."""
+    from metric_calculators import ReproducibilityMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReproducibilityMetric()
+
+    with patch.object(DataFetcher, 'extract_model_card_code', return_value=[]):
+        fetcher = DataFetcher()
+        score, latency = metric.calculate(fetcher)
+        assert score == 0.0
+        assert latency >= 0
+
+
+def test_reproducibility_runs_clean():
+    """Test reproducibility returns 1.0 when code runs without changes."""
+    from metric_calculators import ReproducibilityMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReproducibilityMetric()
+
+    code_snippets = ["import torch\nmodel = torch.load('model.pth')"]
+
+    with patch.object(DataFetcher, 'extract_model_card_code', return_value=code_snippets):
+        with patch.object(DataFetcher, 'test_code_execution', return_value=(True, False)):
+            fetcher = DataFetcher()
+            score, latency = metric.calculate(fetcher)
+            assert score == 1.0
+            assert latency >= 0
+
+
+def test_reproducibility_needs_debugging():
+    """Test reproducibility returns 0.5 when code needs debugging."""
+    from metric_calculators import ReproducibilityMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReproducibilityMetric()
+
+    code_snippets = ["model = load_model()"]
+
+    with patch.object(DataFetcher, 'extract_model_card_code', return_value=code_snippets):
+        with patch.object(DataFetcher, 'test_code_execution', return_value=(True, True)):
+            fetcher = DataFetcher()
+            score, latency = metric.calculate(fetcher)
+            assert score == 0.5
+
+
+def test_reproducibility_doesnt_run():
+    """Test reproducibility returns 0 when code doesn't run."""
+    from metric_calculators import ReproducibilityMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReproducibilityMetric()
+
+    code_snippets = ["...incomplete code..."]
+
+    with patch.object(DataFetcher, 'extract_model_card_code', return_value=code_snippets):
+        with patch.object(DataFetcher, 'test_code_execution', return_value=(False, False)):
+            fetcher = DataFetcher()
+            score, latency = metric.calculate(fetcher)
+            assert score == 0.0
+
+
+def test_treescore_no_parents():
+    """Test treescore returns 0 when no parent models."""
+    from metric_calculators import TreescoreMetric
+    from data_fetcher import DataFetcher
+
+    metric = TreescoreMetric()
+
+    with patch.object(DataFetcher, 'get_parent_model_ids', return_value=[]):
+        fetcher = DataFetcher()
+        score, latency = metric.calculate(fetcher)
+        assert score == 0.0
+        assert latency >= 0
+
+
+def test_treescore_with_registry():
+    """Test treescore calculates average of parent scores."""
+    from metric_calculators import TreescoreMetric
+    from data_fetcher import DataFetcher
+
+    # Mock registry
+    mock_registry = MagicMock()
+    mock_registry.get_model_score.side_effect = [0.8, 0.9, 0.7]
+
+    metric = TreescoreMetric(registry=mock_registry)
+
+    with patch.object(DataFetcher, 'get_parent_model_ids', return_value=["model1", "model2", "model3"]):
+        fetcher = DataFetcher()
+        score, latency = metric.calculate(fetcher)
+        assert score == 0.8  # Average of 0.8, 0.9, 0.7
+        assert latency >= 0
+
+
+def test_treescore_no_registry():
+    """Test treescore returns 0 when no registry provided."""
+    from metric_calculators import TreescoreMetric
+    from data_fetcher import DataFetcher
+
+    metric = TreescoreMetric(registry=None)
+
+    with patch.object(DataFetcher, 'get_parent_model_ids', return_value=["model1"]):
+        fetcher = DataFetcher()
+        score, latency = metric.calculate(fetcher)
+        assert score == 0.0
+
+
+def test_data_fetcher_pr_review_stats():
+    """Test DataFetcher fetches PR review statistics."""
+    from data_fetcher import DataFetcher
+
+    fetcher = DataFetcher(code_url="https://github.com/test/repo")
+
+    # Mock GitHub API responses
+    mock_prs = [
+        {"merged_at": "2024-01-01", "additions": 100, "number": 1},
+        {"merged_at": "2024-01-02", "additions": 200, "number": 2}
+    ]
+
+    with patch('requests.get') as mock_get:
+        # Mock PR list response
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.side_effect = [
+            mock_prs,  # PR list
+            [{"state": "approved"}],  # Reviews for PR 1
+            []  # No reviews for PR 2
+        ]
+
+        reviewed_lines, total_lines = fetcher.get_pr_review_stats()
+        assert total_lines == 300  # 100 + 200
+        assert reviewed_lines == 100  # Only PR 1 had reviews
+
+
+def test_data_fetcher_extract_model_card_code():
+    """Test DataFetcher extracts code from model card."""
+    from data_fetcher import DataFetcher
+
+    fetcher = DataFetcher(model_url="https://huggingface.co/test/model")
+
+    readme_content = """
+# Model Card
+
+## Usage
+
+```python
+import torch
+model = torch.load('model.pth')
+```
+
+Some text.
+
+```python
+output = model(input)
+```
+"""
+
+    with patch('requests.get') as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.text = readme_content
+
+        code_snippets = fetcher.extract_model_card_code()
+        assert len(code_snippets) == 2
+        assert "import torch" in code_snippets[0]
+        assert "output = model" in code_snippets[1]
+
+
+def test_data_fetcher_get_parent_model_ids():
+    """Test DataFetcher extracts parent model IDs from config."""
+    from data_fetcher import DataFetcher
+
+    fetcher = DataFetcher(model_url="https://huggingface.co/test/model")
+
+    config_data = {
+        "_name_or_path": "bert-base-uncased",
+        "base_model": "google/bert-base",
+        "model_type": "bert"
+    }
+
+    with patch('requests.get') as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = config_data
+
+        parent_ids = fetcher.get_parent_model_ids()
+        assert len(parent_ids) >= 1
+        assert any("bert" in pid.lower() for pid in parent_ids)
+
+
+def test_metrics_evaluator_with_new_metrics():
+    """Test MetricsEvaluator includes all Phase 2 metrics."""
+    from metrics_evaluator import MetricsEvaluator
+
+    evaluator = MetricsEvaluator(
+        model_url="https://huggingface.co/test/model",
+        dataset_url="https://huggingface.co/datasets/test/dataset",
+        code_url="https://github.com/test/repo"
+    )
+
+    # Verify new metrics are initialized
+    assert 'reviewedness' in evaluator.metrics
+    assert 'reproducibility' in evaluator.metrics
+    assert 'treescore' in evaluator.metrics
+
+
+def test_net_score_includes_new_metrics():
+    """Test net score calculation includes Phase 2 metrics."""
+    evaluator = create_mock_evaluator({
+        "license": "MIT",
+        "size": 1.0,
+        "contrib": 10,
+        "readme": "installation usage example",
+        "has_code": True,
+        "has_dataset": True,
+        "downloads": 100000,
+        "git_stats": {"stars": 10000, "forks": 5000},
+        "last_modified": True
+    })
+
+    results = evaluator.evaluate()
+
+    # Verify new metrics are in results
+    assert "reviewedness" in results
+    assert "reviewedness_latency" in results
+    assert "reproducibility" in results
+    assert "reproducibility_latency" in results
+    assert "treescore" in results
+    assert "treescore_latency" in results
+
+    # Verify scores are in valid range
+    assert -1 <= results["reviewedness"] <= 1  # Can be -1 for no GitHub
+    assert 0 <= results["reproducibility"] <= 1
+    assert 0 <= results["treescore"] <= 1
+
+
+def test_reviewedness_score_range():
+    """Test reviewedness scores are properly bounded."""
+    from metric_calculators import ReviewednessMetric
+    from data_fetcher import DataFetcher
+
+    metric = ReviewednessMetric()
+
+    # Test 100% reviewed
+    with patch.object(DataFetcher, 'has_code_url', return_value=True):
+        with patch.object(DataFetcher, 'get_pr_review_stats', return_value=(1000, 1000)):
+            fetcher = DataFetcher()
+            score, _ = metric.calculate(fetcher)
+            assert score == 1.0
+
+    # Test 0% reviewed
+    with patch.object(DataFetcher, 'has_code_url', return_value=True):
+        with patch.object(DataFetcher, 'get_pr_review_stats', return_value=(0, 1000)):
+            fetcher = DataFetcher()
+            score, _ = metric.calculate(fetcher)
+            assert score == 0.0
+
+
+def test_heuristic_code_check():
+    """Test heuristic code checking when Claude API unavailable."""
+    from data_fetcher import DataFetcher
+
+    fetcher = DataFetcher()
+
+    # Good code
+    good_code = ["import torch\nmodel = torch.load('model.pth')"]
+    can_run, needs_debug = fetcher._heuristic_code_check(good_code)
+    assert can_run is True
+    assert needs_debug is False
+
+    # Incomplete code
+    incomplete_code = ["model = load_model(...)"]
+    can_run, needs_debug = fetcher._heuristic_code_check(incomplete_code)
+    assert can_run is False

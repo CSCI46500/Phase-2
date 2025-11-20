@@ -11,6 +11,13 @@ from strip import strip_html, strip_markdown
 
 logger = logging.getLogger(__name__)
 
+# Check if Anthropic library is available for code testing
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 
 class DataFetcher:
     """Unified data fetcher for all resource types with caching support."""
@@ -370,3 +377,283 @@ class DataFetcher:
     def has_dataset_url(self) -> bool:
         """Check if dataset URL is available."""
         return bool(self.dataset_id)
+
+    def get_pr_review_stats(self) -> tuple[int, int]:
+        """
+        Get pull request review statistics from GitHub repository.
+
+        Returns:
+            tuple: (reviewed_lines, total_lines) where reviewed_lines is the number
+                   of lines added through reviewed PRs and total_lines is total lines
+                   of code (excluding weights/model files).
+        """
+        cache_key = "pr_review_stats"
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        if not self.code_repo[0]:
+            return 0, 0
+
+        try:
+            owner, repo = self.code_repo
+            reviewed_lines = 0
+            total_lines = 0
+
+            # Get all pull requests (merged)
+            pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=closed&per_page=100"
+            response = requests.get(pr_url, timeout=15)
+
+            if response.status_code == 200:
+                prs = response.json()
+
+                # Count lines from reviewed PRs
+                for pr in prs:
+                    if pr.get("merged_at"):  # Only count merged PRs
+                        additions = pr.get("additions", 0)
+                        net_lines = additions  # Count additions as new code
+
+                        total_lines += net_lines
+
+                        # Check if PR had reviews
+                        pr_number = pr.get("number")
+                        review_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
+                        review_response = requests.get(review_url, timeout=10)
+
+                        if review_response.status_code == 200:
+                            reviews = review_response.json()
+                            if reviews:  # PR had at least one review
+                                reviewed_lines += net_lines
+
+                logger.debug(f"PR review stats: {reviewed_lines}/{total_lines} lines reviewed")
+
+            # If no PRs found, estimate from direct commits
+            if total_lines == 0:
+                # Get total lines of code in repository (excluding binary/model files)
+                total_lines = self._estimate_total_code_lines()
+
+                # Assume no code review if no PRs
+                reviewed_lines = 0
+
+            result = (reviewed_lines, total_lines)
+            self._cache_set(cache_key, result)
+            return result
+
+        except Exception as e:
+            logger.warning(f"Error fetching PR review stats: {e}")
+            return 0, 0
+
+    def _estimate_total_code_lines(self) -> int:
+        """
+        Estimate total lines of code in repository using GitHub API.
+
+        Returns:
+            int: Estimated total lines of code
+        """
+        if not self.code_repo[0]:
+            return 0
+
+        try:
+            owner, repo = self.code_repo
+            # Use GitHub's languages endpoint to get code size estimates
+            lang_url = f"https://api.github.com/repos/{owner}/{repo}/languages"
+            response = requests.get(lang_url, timeout=10)
+
+            if response.status_code == 200:
+                languages = response.json()
+                # Sum bytes of all languages, rough estimate: 50 chars per line average
+                total_bytes = sum(languages.values())
+                estimated_lines = total_bytes // 50
+                logger.debug(f"Estimated {estimated_lines} lines of code")
+                return estimated_lines
+
+        except Exception as e:
+            logger.warning(f"Error estimating code lines: {e}")
+
+        return 0
+
+    def extract_model_card_code(self) -> list[str]:
+        """
+        Extract code snippets from model card README.
+
+        Returns:
+            list[str]: List of code snippets found in markdown code blocks
+        """
+        cache_key = "model_card_code"
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        code_snippets = []
+
+        try:
+            # Get raw README content (before stripping)
+            if not self.model_id:
+                return []
+
+            readme_url = f"https://huggingface.co/{self.model_id}/raw/main/README.md"
+            response = requests.get(readme_url, timeout=10)
+
+            if response.status_code == 200:
+                readme_content = response.text
+
+                # Extract code blocks (```python ... ```)
+                import re
+                # Match code blocks with optional language specifier
+                pattern = r'```(?:python|py)?\n(.*?)```'
+                matches = re.findall(pattern, readme_content, re.DOTALL)
+
+                code_snippets = [match.strip() for match in matches if match.strip()]
+                logger.debug(f"Extracted {len(code_snippets)} code snippets from model card")
+
+        except Exception as e:
+            logger.warning(f"Error extracting model card code: {e}")
+
+        self._cache_set(cache_key, code_snippets)
+        return code_snippets
+
+    def test_code_execution(self, code_snippets: list[str]) -> tuple[bool, bool]:
+        """
+        Test if code snippets can execute successfully.
+
+        Args:
+            code_snippets: List of code snippets to test
+
+        Returns:
+            tuple: (can_run, needs_debugging)
+                   - can_run: True if code runs without critical errors
+                   - needs_debugging: True if code needed fixes to run
+        """
+        if not code_snippets:
+            return False, False
+
+        try:
+            # Use Claude API to analyze if code would run
+            # This is a static analysis approach using AI
+            import os
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+            if not api_key or not ANTHROPIC_AVAILABLE:
+                # Fallback: simple heuristic check
+                return self._heuristic_code_check(code_snippets)
+
+            from anthropic import Anthropic
+            client = Anthropic(api_key=api_key)
+
+            # Combine code snippets
+            combined_code = "\n\n".join(code_snippets)
+
+            prompt = f"""Analyze if this code from a model card would run successfully.
+Rate it as one of:
+- RUNS_CLEAN: Code will run without any modifications
+- RUNS_WITH_DEBUG: Code will run but needs minor fixes (missing imports, typos, etc.)
+- DOES_NOT_RUN: Code has critical errors or is incomplete
+
+Code:
+{combined_code[:2000]}
+
+Respond with ONLY one of: RUNS_CLEAN, RUNS_WITH_DEBUG, DOES_NOT_RUN"""
+
+            message = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=20,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            result = message.content[0].text.strip()
+
+            if "RUNS_CLEAN" in result:
+                return True, False
+            elif "RUNS_WITH_DEBUG" in result:
+                return True, True
+            else:
+                return False, False
+
+        except Exception as e:
+            logger.warning(f"Error testing code execution: {e}")
+            # Fallback to heuristic
+            return self._heuristic_code_check(code_snippets)
+
+    def _heuristic_code_check(self, code_snippets: list[str]) -> tuple[bool, bool]:
+        """
+        Simple heuristic check for code quality when AI is unavailable.
+
+        Args:
+            code_snippets: List of code snippets
+
+        Returns:
+            tuple: (can_run, needs_debugging)
+        """
+        if not code_snippets:
+            return False, False
+
+        # Check for common issues
+        combined_code = "\n".join(code_snippets)
+
+        # Positive indicators
+        has_imports = "import " in combined_code or "from " in combined_code
+        has_function_calls = "(" in combined_code and ")" in combined_code
+
+        # Negative indicators
+        has_placeholder = "..." in combined_code or "TODO" in combined_code
+        has_incomplete = combined_code.count("(") != combined_code.count(")")
+
+        if has_placeholder or has_incomplete:
+            return False, False  # Doesn't run
+        elif has_imports and has_function_calls:
+            return True, False  # Likely runs clean
+        elif has_function_calls:
+            return True, True  # Might run with debugging
+        else:
+            return False, False  # Doesn't run
+
+    def get_parent_model_ids(self) -> list[str]:
+        """
+        Extract parent model IDs from config.json lineage information.
+
+        Returns:
+            list[str]: List of parent model IDs
+        """
+        cache_key = "parent_model_ids"
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        parent_ids = []
+
+        try:
+            if not self.model_id:
+                return []
+
+            # Download config.json from HuggingFace
+            config_url = f"https://huggingface.co/{self.model_id}/raw/main/config.json"
+            response = requests.get(config_url, timeout=10)
+
+            if response.status_code == 200:
+                config = response.json()
+
+                # Look for common parent/base model fields
+                # Different model types use different field names
+                potential_fields = [
+                    "_name_or_path",
+                    "base_model",
+                    "parent_model",
+                    "pretrained_model_name_or_path",
+                    "model_name_or_path"
+                ]
+
+                for field in potential_fields:
+                    value = config.get(field)
+                    if value and isinstance(value, str):
+                        # Check if it looks like a HuggingFace model ID
+                        if "/" in value or value.startswith("bert") or value.startswith("gpt"):
+                            if value not in parent_ids:
+                                parent_ids.append(value)
+
+                logger.debug(f"Found {len(parent_ids)} parent models: {parent_ids}")
+
+        except Exception as e:
+            logger.warning(f"Error extracting parent model IDs: {e}")
+
+        self._cache_set(cache_key, parent_ids)
+        return parent_ids
