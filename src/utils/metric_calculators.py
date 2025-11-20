@@ -6,7 +6,7 @@ import time
 import logging
 import os
 from typing import Dict, Tuple
-from data_fetcher import DataFetcher
+from src.utils.data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -353,3 +353,169 @@ class CodeQualityMetric:
 
         latency_ms = int((time.time() - start_time) * 1000)
         return total_score, latency_ms
+
+
+class ReproducibilityMetric:
+    """
+    Evaluates whether the model can be run using only the demo code in the model card.
+
+    Scoring:
+    - 0: No code provided or doesn't run
+    - 0.5: Runs with debugging/modifications
+    - 1: Runs with no changes
+    """
+
+    def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
+        """Calculate reproducibility score based on model card demo code."""
+        start_time = time.time()
+
+        try:
+            # Fetch model README/card
+            readme_text = fetcher.fetch_readme("model").lower()
+
+            # Check if there's demo/example code in the model card
+            code_indicators = ["```python", "```py", "from transformers", "import torch", "pipeline("]
+            has_code = any(indicator in readme_text for indicator in code_indicators)
+
+            if not has_code:
+                # No code provided
+                score = 0.0
+                logger.debug("Reproducibility score: 0.0 (no demo code found)")
+            else:
+                # For now, we assign 0.5 as we can't actually execute the code
+                # In a full implementation, this would:
+                # 1. Extract code from model card
+                # 2. Attempt to run it in a sandbox
+                # 3. Score based on whether it runs successfully
+                score = 0.5
+                logger.debug("Reproducibility score: 0.5 (demo code found, not tested)")
+
+        except Exception as e:
+            logger.warning(f"Error calculating reproducibility metric: {e}")
+            score = 0.0
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        return score, latency_ms
+
+
+class ReviewednessMetric:
+    """
+    Evaluates the fraction of code introduced through pull requests with code review.
+
+    Returns:
+    - -1: No linked GitHub repository
+    - 0.0 - 1.0: Fraction of code reviewed
+    """
+
+    def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
+        """Calculate reviewedness score from GitHub repository."""
+        start_time = time.time()
+
+        try:
+            import requests
+            
+            # Check if there's a linked GitHub repository
+            if not fetcher.has_code_url():
+                logger.debug("Reviewedness score: -1 (no GitHub repo)")
+                latency_ms = int((time.time() - start_time) * 1000)
+                return -1.0, latency_ms
+
+            owner, repo = fetcher.code_repo
+
+            # Get total commits
+            commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=100"
+            commits_response = requests.get(commits_url, timeout=10)
+
+            if commits_response.status_code != 200:
+                logger.warning(f"Failed to fetch commits: {commits_response.status_code}")
+                return 0.0, int((time.time() - start_time) * 1000)
+
+            commits = commits_response.json()
+            total_commits = len(commits)
+
+            if total_commits == 0:
+                return 0.0, int((time.time() - start_time) * 1000)
+
+            # Count commits that came from merged PRs
+            reviewed_commits = 0
+
+            for commit in commits:
+                commit_message = commit.get("commit", {}).get("message", "").lower()
+
+                # Check for merge commit patterns
+                is_merge = (
+                    "merge pull request" in commit_message or
+                    "merge pr" in commit_message or
+                    (commit.get("parents", []) and len(commit.get("parents", [])) > 1)
+                )
+
+                if is_merge:
+                    reviewed_commits += 1
+
+            # Calculate fraction
+            score = round(reviewed_commits / total_commits, 2) if total_commits > 0 else 0.0
+            logger.debug(f"Reviewedness score: {score} ({reviewed_commits}/{total_commits} commits reviewed)")
+
+        except Exception as e:
+            logger.warning(f"Error calculating reviewedness metric: {e}")
+            score = 0.0
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        return score, latency_ms
+
+
+class TreescoreMetric:
+    """
+    Evaluates the average of total model scores of all parents according to lineage graph.
+
+    This requires access to the database to query parent models.
+    """
+
+    def __init__(self, db_session=None, package_id=None):
+        """
+        Initialize with optional database session and package ID.
+
+        Args:
+            db_session: SQLAlchemy database session for querying lineage
+            package_id: Current package ID to find parents for
+        """
+        self.db_session = db_session
+        self.package_id = package_id
+
+    def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
+        """Calculate treescore based on parent model scores."""
+        start_time = time.time()
+
+        try:
+            # If no database session or package ID provided, return 0
+            if not self.db_session or not self.package_id:
+                logger.debug("Treescore: 0.0 (no database context provided)")
+                latency_ms = int((time.time() - start_time) * 1000)
+                return 0.0, latency_ms
+
+            # Import here to avoid circular dependencies
+            from src.crud.package import get_package_lineage
+            from src.crud.metrics import get_package_metrics
+
+            # Get parent packages from lineage
+            lineage = get_package_lineage(self.db_session, self.package_id)
+
+            # lineage should return information about parents
+            parent_scores = []
+
+            # For now, if there are no parents, score is 0
+            if not lineage or len(lineage) == 0:
+                score = 0.0
+                logger.debug("Treescore: 0.0 (no parent models)")
+            else:
+                # Calculate average of parent net scores
+                # This is a simplified implementation
+                score = 0.5  # Placeholder - needs proper lineage traversal
+                logger.debug(f"Treescore: {score}")
+
+        except Exception as e:
+            logger.warning(f"Error calculating treescore metric: {e}")
+            score = 0.0
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        return score, latency_ms

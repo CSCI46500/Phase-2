@@ -6,8 +6,8 @@ import pytest
 from typing import Dict, Any
 from dotenv import load_dotenv
 
-from logger_config import setup_logging
-from metrics_evaluator import MetricsEvaluator
+from src.utils.logger import setup_logging
+from src.services.metrics_service import MetricsEvaluator
 
 # Load environment variables from .env file
 load_dotenv()

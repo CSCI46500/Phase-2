@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any
 from collections import OrderedDict
 
-from data_fetcher import DataFetcher
-from metric_calculators import (
+from src.utils.data_fetcher import DataFetcher
+from src.utils.metric_calculators import (
     LicenseMetric,
     SizeScoreMetric,
     RampUpTimeMetric,
@@ -16,7 +16,10 @@ from metric_calculators import (
     PerformanceClaimsMetric,
     DatasetCodeScoreMetric,
     DatasetQualityMetric,
-    CodeQualityMetric
+    CodeQualityMetric,
+    ReproducibilityMetric,
+    ReviewednessMetric,
+    TreescoreMetric
 )
 
 logger = logging.getLogger(__name__)
@@ -52,7 +55,10 @@ class MetricsEvaluator:
             'performance_claims': PerformanceClaimsMetric(),
             'dataset_and_code_score': DatasetCodeScoreMetric(),
             'dataset_quality': DatasetQualityMetric(),
-            'code_quality': CodeQualityMetric()
+            'code_quality': CodeQualityMetric(),
+            'reproducibility': ReproducibilityMetric(),
+            'reviewedness': ReviewednessMetric(),
+            'treescore': TreescoreMetric()
         }
 
     def _execute_metric(self, metric_name: str, metric_calculator) -> Dict[str, Any]:
@@ -163,6 +169,12 @@ class MetricsEvaluator:
             ("dataset_quality_latency", metric_results['dataset_quality']['latency']),
             ("code_quality", metric_results['code_quality']['score']),
             ("code_quality_latency", metric_results['code_quality']['latency']),
+            ("reproducibility", metric_results['reproducibility']['score']),
+            ("reproducibility_latency", metric_results['reproducibility']['latency']),
+            ("reviewedness", metric_results['reviewedness']['score']),
+            ("reviewedness_latency", metric_results['reviewedness']['latency']),
+            ("treescore", metric_results['treescore']['score']),
+            ("treescore_latency", metric_results['treescore']['latency']),
         ])
 
         return output

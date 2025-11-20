@@ -1,8 +1,0 @@
-
-WARNING: Failed to generate report: No data to report.
-
-
-================================ tests coverage ================================
-_______________ coverage: platform linux, python 3.13.9-final-0 ________________
-
-no tests ran in 0.05s
