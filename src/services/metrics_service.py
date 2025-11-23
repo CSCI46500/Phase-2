@@ -30,15 +30,19 @@ class MetricsEvaluator:
     Orchestrates parallel evaluation of all metrics.
     """
 
+    # Phase 2 weights (11 metrics total, sum = 1.0)
     WEIGHTS = {
-        "license": 0.2,
-        "size": 0.1,
-        "ramp": 0.12,
-        "bus": 0.12,
-        "perf": 0.1,
-        "ds_code": 0.1,
-        "ds_quality": 0.13,
-        "code_quality": 0.13
+        "license": 0.15,           # Critical for legal compliance
+        "code_quality": 0.11,      # High importance for maintainability
+        "dataset_quality": 0.11,   # High importance for model quality
+        "reproducibility": 0.10,   # Can the model actually run?
+        "ramp": 0.09,              # Ease of getting started
+        "bus": 0.09,               # Team maintainability risk
+        "reviewedness": 0.09,      # Code review quality
+        "ds_code": 0.09,           # Dataset and code availability
+        "size": 0.07,              # Storage/deployment considerations
+        "perf": 0.07,              # Performance claims validity
+        "treescore": 0.03          # Supplementary (lineage quality)
     }
 
     def __init__(self, model_url: str, dataset_url: str, code_url: str):
@@ -106,7 +110,12 @@ class MetricsEvaluator:
         return output
 
     def _calculate_net_score(self, metric_results: Dict[str, Dict]) -> tuple[float, int]:
-        """Calculate weighted net score from individual metric scores."""
+        """
+        Calculate weighted net score from individual metric scores.
+        Handles special cases:
+        - reviewedness can be -1 (no GitHub repo) - excluded from calculation
+        - size_score is a dict - use minimum value
+        """
         start_time = time.time()
 
         # Extract scores
@@ -118,12 +127,26 @@ class MetricsEvaluator:
         ds_code_score = metric_results['dataset_and_code_score']['score']
         ds_quality = metric_results['dataset_quality']['score']
         code_quality = metric_results['code_quality']['score']
+        reproducibility = metric_results['reproducibility']['score']
+        reviewedness = metric_results['reviewedness']['score']
+        treescore = metric_results['treescore']['score']
 
         # Handle size_score (it's a dictionary)
         if isinstance(size_score, dict):
             size_score = min(size_score.values()) if size_score else 0.0
 
-        # Calculate weighted sum
+        # Handle reviewedness = -1 (no GitHub repo)
+        # If -1, exclude from calculation and redistribute its weight
+        total_weight = 1.0
+        reviewedness_weight = self.WEIGHTS["reviewedness"]
+
+        if reviewedness < 0:
+            # Exclude reviewedness, redistribute weight proportionally
+            total_weight -= reviewedness_weight
+            reviewedness = 0.0
+            reviewedness_weight = 0.0
+
+        # Calculate weighted sum (all 11 metrics)
         net_score = (
             license_score * self.WEIGHTS["license"] +
             size_score * self.WEIGHTS["size"] +
@@ -132,8 +155,15 @@ class MetricsEvaluator:
             perf_score * self.WEIGHTS["perf"] +
             ds_code_score * self.WEIGHTS["ds_code"] +
             ds_quality * self.WEIGHTS["ds_quality"] +
-            code_quality * self.WEIGHTS["code_quality"]
+            code_quality * self.WEIGHTS["code_quality"] +
+            reproducibility * self.WEIGHTS["reproducibility"] +
+            reviewedness * reviewedness_weight +
+            treescore * self.WEIGHTS["treescore"]
         )
+
+        # Normalize if we excluded reviewedness
+        if total_weight < 1.0:
+            net_score = net_score / total_weight
 
         # Clamp to [0.0, 1.0] and round
         net_score = round(min(max(net_score, 0.0), 1.0), 2)
