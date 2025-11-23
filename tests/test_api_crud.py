@@ -10,10 +10,10 @@ import tempfile
 import os
 
 # Import app and database
-from api import app
-from database import Base, get_db
-from models import User, Package
-from auth import create_user, generate_token
+from src.api import app
+from src.core.database import Base, get_db
+from src.core.models import User, Package
+from src.core.auth import create_user, generate_token
 
 # Create test database
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_model_registry.db"
