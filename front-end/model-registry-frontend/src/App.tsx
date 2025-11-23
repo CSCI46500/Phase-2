@@ -7,22 +7,32 @@ const App: React.FC = () => {
   return (
     <Router>
       <div className="app">
-        <nav className="navbar">
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+
+        <nav className="navbar" aria-label="Main navigation" role="navigation">
           <div className="nav-container">
-            <h1 className="logo">Model Registry</h1>
-            <ul className="nav-links">
+            <h1 className="logo">
+              <Link to="/" aria-label="Model Registry home">
+                Model Registry
+              </Link>
+            </h1>
+            <ul className="nav-links" role="list">
               <li>
-                <NavLink 
-                  to="/" 
+                <NavLink
+                  to="/"
                   className={({ isActive }) => isActive ? 'active' : ''}
+                  aria-label="Search artifacts"
                 >
                   Search
                 </NavLink>
               </li>
               <li>
-                <NavLink 
+                <NavLink
                   to="/ingest"
                   className={({ isActive }) => isActive ? 'active' : ''}
+                  aria-label="Ingest new model package"
                 >
                   Ingest
                 </NavLink>
@@ -31,14 +41,14 @@ const App: React.FC = () => {
           </div>
         </nav>
 
-        <main className="main-content">
+        <main id="main-content" className="main-content" tabIndex={-1} role="main">
           <Routes>
             <Route path="/" element={<SearchArtifacts />} />
             <Route path="/ingest" element={<IngestPackage />} />
           </Routes>
         </main>
 
-        <footer className="footer">
+        <footer className="footer" role="contentinfo">
           <p>Trustworthy Model Registry - Phase 2 Project</p>
         </footer>
       </div>
