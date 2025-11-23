@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # SQL Echo (for debugging SQL queries)
+    sql_echo: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = False

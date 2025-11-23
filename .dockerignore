@@ -1,40 +1,80 @@
 # Git
 .git
 .gitignore
+.gitattributes
 
 # Python
 __pycache__
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
+*$py.class
 .Python
 *.so
 *.egg
 *.egg-info
-dist
-build
-.pytest_cache
+dist/
+build/
+.pytest_cache/
 .coverage
-htmlcov
+htmlcov/
+.tox/
 
 # IDE
-.idea
-.vscode
+.idea/
+.vscode/
 *.swp
 *.swo
+*~
 
 # GitHub
-.github
+.github/
 
 # Tests
-tests/__pycache__
+tests/__pycache__/
 
 # Environment
 .env
-.venv
+.env.local
+.env.*.local
+.venv/
 env/
 venv/
+ENV/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+test_model_registry.db
+
+# Logs
+*.log
+logs/
+
+# Frontend (if not building in Docker)
+front-end/node_modules/
+front-end/dist/
+front-end/build/
+
+# Sample data
+sample_input/
+
+# Scripts (optional - remove if needed in container)
+scripts/
+
+# AWS CodeDeploy
+appspec.yml
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Documentation
 *.md
 !README.md
+
+# Docker (don't copy Docker files into image)
+docker-compose.yml
+Dockerfile.dev

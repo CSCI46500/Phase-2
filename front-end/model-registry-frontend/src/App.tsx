@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import IngestPackage from './components/IngestPackage';
 import SearchArtifacts from './components/SearchArtifacts';
+import HealthDashboard from './components/HealthDashboard';
+import LogViewer from './components/LogViewer';
 import './App.css';
 
 const App: React.FC = () => {
@@ -37,6 +39,15 @@ const App: React.FC = () => {
                   Ingest
                 </NavLink>
               </li>
+              <li>
+                <NavLink
+                  to="/health"
+                  className={({ isActive }) => isActive ? 'active' : ''}
+                  aria-label="System health dashboard"
+                >
+                  Health
+                </NavLink>
+              </li>
             </ul>
           </div>
         </nav>
@@ -45,6 +56,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<SearchArtifacts />} />
             <Route path="/ingest" element={<IngestPackage />} />
+            <Route path="/health" element={<HealthDashboard />} />
           </Routes>
         </main>
 
