@@ -51,3 +51,22 @@ export type ApiError = {
 };
 
 export type SearchType = 'regex' | 'id' | 'all';
+
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+
+export type LogEntry = {
+  id: string;
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  source?: string;
+  user?: string;
+  metadata?: Record<string, any>;
+};
+
+export type LogsResponse = {
+  logs: LogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+};

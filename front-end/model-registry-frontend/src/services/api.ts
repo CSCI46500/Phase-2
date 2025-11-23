@@ -4,7 +4,9 @@ import type {
   IngestResponse,
   SearchResponse,
   Artifact,
-  ApiError
+  ApiError,
+  LogsResponse,
+  LogLevel
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -164,6 +166,35 @@ export const modelRegistryAPI = {
   healthCheck: async (): Promise<{ status: string; components: any }> => {
     const response = await apiClient.get('/health');
     return response.data;
+  },
+
+  // Get logs with filtering
+  getLogs: async (
+    level?: LogLevel,
+    source?: string,
+    startDate?: string,
+    endDate?: string,
+    search?: string,
+    offset: number = 0,
+    limit: number = 100
+  ): Promise<LogsResponse> => {
+    const params: any = { offset, limit };
+    if (level) params.level = level;
+    if (source) params.source = source;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    if (search) params.search = search;
+
+    const response = await apiClient.get<any>('/logs', { params });
+
+    // Transform backend response to frontend format
+    const page = Math.floor(offset / limit) + 1;
+    return {
+      logs: response.data.logs || [],
+      total: response.data.total || 0,
+      page,
+      limit
+    };
   },
 };
 
