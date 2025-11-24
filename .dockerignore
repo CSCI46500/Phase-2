@@ -1,6 +1,7 @@
 # Git
 .git
 .gitignore
+.gitattributes
 .github
 
 # Python
@@ -8,11 +9,13 @@ __pycache__
 *.py[cod]
 *$py.class
 *.so
+*.pyd
 .Python
 env/
 venv/
 ENV/
 .venv
+*.egg
 *.egg-info/
 dist/
 build/
@@ -24,8 +27,8 @@ htmlcov/
 .tox/
 
 # IDE
-.vscode
-.idea
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
@@ -34,30 +37,54 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
-
 # Environment
 .env
 .env.local
 .env.*.local
+.venv/
+env/
+venv/
+ENV/
 
-# Docker
-docker-compose.yml
-Dockerfile
-.dockerignore
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+test_model_registry.db
 
-# Documentation
-docs/
-*.md
+# Logs
+*.log
+logs/
+
+# Tests
+tests/__pycache__/
+
+# Frontend (if not building in Docker)
+front-end/node_modules/
+front-end/dist/
+front-end/build/
+
+# Sample data
+sample_input/
+
+# Scripts (optional - remove if needed in container)
+scripts/
 
 # AWS
 .elasticbeanstalk/
 .aws/
+appspec.yml
 
-# Frontend (for backend Dockerfile)
-front-end/
+# Documentation
+docs/
+*.md
+!README.md
+
+# Docker (don't copy Docker files into image)
+docker-compose.yml
+Dockerfile
+Dockerfile.dev
+.dockerignore
 
 # Misc
 *.bak

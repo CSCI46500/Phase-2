@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # SQL Echo (for debugging SQL queries)
+    sql_echo: bool = False
+
     @property
     def is_local(self) -> bool:
         """Check if running in local environment."""
