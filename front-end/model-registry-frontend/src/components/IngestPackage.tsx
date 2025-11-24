@@ -56,11 +56,13 @@ const IngestPackage: React.FC = () => {
 
   return (
     <div className="ingest-container">
-      <h2>Ingest Model Package</h2>
-      
-      <form onSubmit={handleSubmit}>
+      <h2 id="ingest-heading">Ingest Model Package</h2>
+
+      <form onSubmit={handleSubmit} aria-labelledby="ingest-heading">
         <div className="form-group">
-          <label htmlFor="modelId">HuggingFace Model ID or URL:</label>
+          <label htmlFor="modelId">
+            HuggingFace Model ID or URL: <span aria-label="required" className="required-indicator">*</span>
+          </label>
           <input
             type="text"
             id="modelId"
@@ -69,8 +71,13 @@ const IngestPackage: React.FC = () => {
             placeholder="username/model-name or https://huggingface.co/username/model-name"
             disabled={loading}
             required
+            aria-required="true"
+            aria-describedby="modelId-help"
+            aria-invalid={error ? 'true' : 'false'}
           />
-          <small>Example: bert-base-uncased or https://huggingface.co/bert-base-uncased</small>
+          <small id="modelId-help">
+            Example: bert-base-uncased or https://huggingface.co/bert-base-uncased
+          </small>
         </div>
 
         <div className="form-group">
@@ -82,7 +89,11 @@ const IngestPackage: React.FC = () => {
             onChange={handleVersionChange}
             placeholder="1.0.0"
             disabled={loading}
+            aria-describedby="version-help"
           />
+          <small id="version-help">
+            Specify a version number for this model package
+          </small>
         </div>
 
         <div className="form-group">
@@ -94,36 +105,65 @@ const IngestPackage: React.FC = () => {
             onChange={handleDescriptionChange}
             placeholder="Model description"
             disabled={loading}
+            aria-describedby="description-help"
           />
+          <small id="description-help">
+            Provide a brief description of the model
+          </small>
         </div>
 
-        <button type="submit" disabled={loading || !modelId.trim()}>
+        <button
+          type="submit"
+          disabled={loading || !modelId.trim()}
+          aria-label={loading ? 'Ingesting model package...' : 'Ingest model package'}
+          aria-busy={loading}
+        >
           {loading ? 'Ingesting...' : 'Ingest Package'}
         </button>
       </form>
 
       {loading && (
-        <div className="spinner">
-          <div className="spinner-icon"></div>
+        <div
+          className="spinner"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="spinner-icon" aria-hidden="true"></div>
           <p>Processing model... This may take a minute.</p>
         </div>
       )}
 
       {error && (
-        <div className="error-message">
-          <h3>❌ Error</h3>
-          <p>{error.message}</p>
+        <div
+          className="error-message"
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+        >
+          <h3><span aria-label="Error" role="img">❌</span> Error</h3>
+          <p id="error-description">{error.message}</p>
           {error.code && <p className="error-code">Error Code: {error.code}</p>}
+          <p id="error-suggestion">
+            Please verify the model ID and try again. Ensure the model exists on HuggingFace.
+          </p>
         </div>
       )}
 
       {response && (
-        <div className="success-message">
-          <h3>✅ Success!</h3>
+        <div
+          className="success-message"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <h3><span aria-label="Success" role="img">✅</span> Success!</h3>
           <div className="response-details">
             <div className="info-row">
               <span className="label">Model ID:</span>
-              <span className="value">{response.id || '⚠️ Pending (not implemented)'}</span>
+              <span className="value">
+                {response.id || <><span aria-label="Warning" role="img">⚠️</span> Pending (not implemented)</>}
+              </span>
             </div>
             <div className="info-row">
               <span className="label">Name:</span>
@@ -131,12 +171,15 @@ const IngestPackage: React.FC = () => {
             </div>
             <div className="info-row">
               <span className="label">Overall Score:</span>
-              <span className={`value score ${response.score >= 0.5 ? 'pass' : 'fail'}`}>
+              <span
+                className={`value score ${response.score >= 0.5 ? 'pass' : 'fail'}`}
+                aria-label={`Overall score: ${response.score.toFixed(2)} out of 1.0, ${response.score >= 0.5 ? 'passing' : 'failing'}`}
+              >
                 {response.score.toFixed(2)}
               </span>
             </div>
-            
-            <h4>📊 Metrics:</h4>
+
+            <h4><span aria-label="Metrics" role="img">📊</span> Metrics:</h4>
             <div className="metrics-grid">
               <div className="metric-item">
                 <span className="metric-name">Ramp-up:</span>
@@ -163,15 +206,15 @@ const IngestPackage: React.FC = () => {
             </div>
 
             <div className="implementation-notes">
-              <h4>🔧 Implementation Status:</h4>
+              <h4><span aria-label="Implementation Status" role="img">🔧</span> Implementation Status:</h4>
               <ul>
-                <li className="implemented">✓ Model successfully ingested and validated</li>
-                <li className="implemented">✓ Metrics calculated and stored</li>
-                <li className="implemented">✓ Score validation (≥0.5 required)</li>
-                <li className="missing">✗ Unique ID generation not yet implemented</li>
-                <li className="missing">✗ Lineage graph parsing incomplete</li>
-                <li className="missing">✗ Reproducibility metric (demo code execution)</li>
-                <li className="missing">✗ Reviewedness metric (GitHub PR analysis)</li>
+                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Model successfully ingested and validated</li>
+                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Metrics calculated and stored</li>
+                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Score validation (≥0.5 required)</li>
+                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Unique ID generation not yet implemented</li>
+                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Lineage graph parsing incomplete</li>
+                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Reproducibility metric (demo code execution)</li>
+                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Reviewedness metric (GitHub PR analysis)</li>
               </ul>
             </div>
           </div>
