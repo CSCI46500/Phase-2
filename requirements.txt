@@ -16,6 +16,9 @@ anthropic
 huggingface_hub
 requests
 
+# Monitoring
+psutil
+
 # Testing
 pytest
 pytest-cov

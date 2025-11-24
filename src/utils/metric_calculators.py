@@ -483,7 +483,13 @@ class TreescoreMetric:
         self.package_id = package_id
 
     def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
-        """Calculate treescore based on parent model scores."""
+        """
+        Calculate treescore based on parent model scores.
+
+        TreeScore = average of all parent packages' net_score values.
+        If no parents exist, returns 0.0.
+        Handles cycles via the recursive CTE depth tracking.
+        """
         start_time = time.time()
 
         try:
@@ -495,23 +501,49 @@ class TreescoreMetric:
 
             # Import here to avoid circular dependencies
             from src.crud.package import get_package_lineage
-            from src.crud.metrics import get_package_metrics
+            from src.core.models import Package
+            from uuid import UUID
 
-            # Get parent packages from lineage
+            # Get parent packages from lineage (includes depth tracking)
             lineage = get_package_lineage(self.db_session, self.package_id)
 
-            # lineage should return information about parents
-            parent_scores = []
+            # Filter out the current package (depth 0) to get only parents
+            parent_entries = [entry for entry in lineage if entry.get('depth', 0) > 0]
 
-            # For now, if there are no parents, score is 0
-            if not lineage or len(lineage) == 0:
+            if not parent_entries:
                 score = 0.0
                 logger.debug("Treescore: 0.0 (no parent models)")
             else:
-                # Calculate average of parent net scores
-                # This is a simplified implementation
-                score = 0.5  # Placeholder - needs proper lineage traversal
-                logger.debug(f"Treescore: {score}")
+                # Get net_score for each parent package
+                parent_scores = []
+
+                for parent_entry in parent_entries:
+                    try:
+                        parent_id = UUID(parent_entry['id'])
+                        parent_pkg = self.db_session.query(Package).filter(
+                            Package.id == parent_id
+                        ).first()
+
+                        if parent_pkg and parent_pkg.net_score is not None:
+                            parent_scores.append(parent_pkg.net_score)
+                            logger.debug(
+                                f"Parent {parent_entry['name']} v{parent_entry['version']}: "
+                                f"score={parent_pkg.net_score}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to get score for parent {parent_entry.get('id')}: {e}")
+                        continue
+
+                # Calculate average of parent scores
+                if parent_scores:
+                    score = sum(parent_scores) / len(parent_scores)
+                    logger.debug(
+                        f"Treescore: {score:.3f} (average of {len(parent_scores)} parents)"
+                    )
+                else:
+                    # Parents exist but none have net_scores yet
+                    score = 0.0
+                    logger.debug("Treescore: 0.0 (parents have no scores)")
 
         except Exception as e:
             logger.warning(f"Error calculating treescore metric: {e}")

@@ -164,3 +164,37 @@ class PackageConfusionAudit(Base):
 
     # Relationships
     package = relationship("Package", back_populates="audit_logs")
+
+
+class SystemMetrics(Base):
+    """System observability metrics for monitoring API health and performance."""
+    __tablename__ = "system_metrics"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    timestamp = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)
+
+    # Request metrics
+    total_requests = Column(Integer, default=0)
+    successful_requests = Column(Integer, default=0)
+    failed_requests = Column(Integer, default=0)
+
+    # Performance metrics
+    avg_response_time_ms = Column(Float, nullable=True)
+    p95_response_time_ms = Column(Float, nullable=True)
+    p99_response_time_ms = Column(Float, nullable=True)
+
+    # Error tracking
+    error_count = Column(Integer, default=0)
+    error_rate = Column(Float, default=0.0)  # Percentage
+
+    # Endpoint-specific metrics (stored as JSON)
+    endpoint_metrics = Column(JSONB, nullable=True)
+
+    # System health
+    cpu_percent = Column(Float, nullable=True)
+    memory_percent = Column(Float, nullable=True)
+    disk_percent = Column(Float, nullable=True)
+
+    # Database metrics
+    db_connections = Column(Integer, nullable=True)
+    db_query_time_ms = Column(Float, nullable=True)

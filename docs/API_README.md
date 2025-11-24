@@ -190,6 +190,26 @@ Rate a package (1-5 stars).
 #### GET `/package/{package_id}`
 Download a package (returns presigned S3 URL).
 
+**Query Parameters (Sprint 2 - Component Downloads):**
+- `weights`: boolean - Include model weights
+- `datasets`: boolean - Include datasets
+- `code`: boolean - Include code/scripts
+- `full`: boolean - Download complete package (overrides other params)
+
+If no parameters are specified, returns the full package by default.
+
+**Examples:**
+```bash
+# Download only weights
+GET /package/{id}?weights=true
+
+# Download weights and code (no datasets)
+GET /package/{id}?weights=true&code=true
+
+# Download full package explicitly
+GET /package/{id}?full=true
+```
+
 **Response:**
 ```json
 {
@@ -197,7 +217,8 @@ Download a package (returns presigned S3 URL).
   "name": "my-model",
   "version": "1.0.0",
   "download_url": "https://s3.amazonaws.com/...",
-  "expires_in_seconds": 300
+  "expires_in_seconds": 300,
+  "components_included": ["weights", "code"]
 }
 ```
 
@@ -286,6 +307,53 @@ Get package lineage tree (parent-child relationships).
 }
 ```
 
+#### POST `/package/license-check` (Sprint 2)
+Check license compatibility between a GitHub repository and a model package.
+
+**Request:**
+```json
+{
+  "github_url": "https://github.com/user/my-project",
+  "model_id": "uuid-of-model-package"
+}
+```
+
+**Response - Compatible:**
+```json
+{
+  "compatible": true,
+  "github_license": "MIT",
+  "model_license": "Apache-2.0",
+  "reason": "MIT is compatible with Apache-2.0 licenses",
+  "warnings": null
+}
+```
+
+**Response - Incompatible:**
+```json
+{
+  "compatible": false,
+  "github_license": "GPL-3.0",
+  "model_license": "MIT",
+  "reason": "GPL-3.0 is not compatible with MIT license. GPL requires derivative works to use GPL.",
+  "warnings": ["Consider using a GPL-compatible license or choosing a different model"]
+}
+```
+
+**Supported Licenses:**
+- MIT
+- Apache-2.0
+- BSD-2-Clause, BSD-3-Clause
+- GPL-2.0, GPL-3.0
+- LGPL-2.1, LGPL-3.0
+- MPL-2.0
+- ISC
+- CC-BY-4.0, CC-BY-SA-4.0
+- Unlicense
+- Proprietary
+
+The endpoint uses ModelGo-inspired compatibility rules to determine if the GitHub project license is compatible with the model's license.
+
 ### UPDATE Operations
 
 #### PUT `/user/{user_id}/permissions` (Admin Only)
@@ -309,21 +377,131 @@ Delete a user. Users can delete themselves; admins can delete anyone.
 #### DELETE `/reset` (Admin Only)
 Reset entire system (deletes all packages and users except default admin).
 
-### Health Check
+### Observability & Monitoring (Sprint 3)
 
 #### GET `/health`
-Check system health.
+Check system health with optional detailed performance metrics.
 
-**Response:**
+**Query Parameters:**
+- `detailed`: boolean - Include detailed performance metrics (default: false)
+
+**Basic Response:**
 ```json
 {
   "status": "healthy",
+  "timestamp": "2025-11-24T00:14:54.071484",
   "components": {
     "database": "healthy",
     "s3": "healthy"
   }
 }
 ```
+
+**Detailed Response (`?detailed=true`):**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-11-24T00:14:54.071484",
+  "components": {
+    "database": "healthy",
+    "s3": "healthy"
+  },
+  "metrics": {
+    "total_requests": 150,
+    "successful_requests": 142,
+    "failed_requests": 8,
+    "error_rate_percent": 5.33,
+    "avg_response_time_ms": 124.5,
+    "p95_response_time_ms": 450.2,
+    "p99_response_time_ms": 890.5,
+    "cpu_percent": 12.3,
+    "memory_percent": 45.8,
+    "disk_percent": 23.1
+  },
+  "top_endpoints": [
+    {
+      "endpoint": "POST /package",
+      "count": 45,
+      "errors": 2,
+      "avg_response_ms": 450.5
+    },
+    {
+      "endpoint": "GET /packages",
+      "count": 38,
+      "errors": 0,
+      "avg_response_ms": 45.2
+    }
+  ]
+}
+```
+
+**Metrics Details:**
+- `total_requests`: Total API requests since startup
+- `successful_requests`: Requests with 2xx/3xx status
+- `failed_requests`: Requests with 4xx/5xx status
+- `error_rate_percent`: Percentage of failed requests
+- `avg_response_time_ms`: Average response time
+- `p95_response_time_ms`: 95th percentile response time
+- `p99_response_time_ms`: 99th percentile response time
+- `cpu_percent`: Current CPU usage
+- `memory_percent`: Current memory usage
+- `disk_percent`: Current disk usage
+- `top_endpoints`: Top 5 endpoints by request count
+
+#### GET `/logs` (Admin Only)
+Get application logs with filtering capabilities.
+
+**Headers:**
+```
+X-Authorization: <admin-token>
+```
+
+**Query Parameters:**
+- `level`: Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `start_time`: ISO format datetime for range start (e.g., "2025-11-24T00:00:00")
+- `end_time`: ISO format datetime for range end
+- `offset`: Pagination offset (default: 0)
+- `limit`: Max logs to return (default: 100, max: 1000)
+
+**Examples:**
+```bash
+# Get recent error logs
+GET /logs?level=ERROR&limit=50
+
+# Get logs in time range
+GET /logs?start_time=2025-11-24T00:00:00&end_time=2025-11-24T23:59:59
+
+# Paginate through logs
+GET /logs?offset=100&limit=50
+```
+
+**Response:**
+```json
+{
+  "logs": [
+    {
+      "timestamp": "2025-11-24T12:34:56.789000",
+      "endpoint": "POST /package",
+      "method": "POST",
+      "status_code": 500,
+      "error": "S3 connection timeout"
+    },
+    {
+      "timestamp": "2025-11-24T12:30:15.123000",
+      "endpoint": "GET /package/uuid",
+      "method": "GET",
+      "status_code": 404,
+      "error": "Package not found"
+    }
+  ],
+  "total": 2,
+  "offset": 0,
+  "limit": 100,
+  "note": "Showing recent request errors. For full logs, check application log files."
+}
+```
+
+**Note:** The `/logs` endpoint returns recent errors tracked by the metrics collector. For comprehensive log analysis, access the application log files directly.
 
 ## Permission System
 
@@ -338,18 +516,19 @@ Admins automatically have all permissions.
 
 ## Database Schema
 
-The system uses 8 PostgreSQL tables:
+The system uses 9 PostgreSQL tables:
 
 1. **users**: User accounts and permissions
 2. **tokens**: API tokens with usage tracking
 3. **packages**: Package metadata
-4. **metrics**: Evaluation metrics for packages
-5. **lineage**: Package relationships
+4. **metrics**: Evaluation metrics for packages (11 metrics including Phase 2 additions)
+5. **lineage**: Package relationships and dependencies
 6. **ratings**: User ratings
 7. **download_history**: Download audit trail
 8. **package_confusion_audit**: Security audit logs
+9. **system_metrics** (Sprint 3): Observability metrics (requests, response times, errors, system resources)
 
-See `models.py` for complete schema details.
+See `src/core/models.py` for complete schema details.
 
 ## Integration with Existing CLI
 

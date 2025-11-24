@@ -9,12 +9,16 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    # Environment
+    environment: str = "production"  # "local", "development", "staging", "production"
+
     # Database
     database_url: str = "postgresql://postgres:postgres@localhost:5432/model_registry"
 
     # AWS S3
     s3_bucket_name: str = "model-registry-packages"
     s3_region: str = "us-east-1"
+    s3_endpoint_url: Optional[str] = None  # For MinIO or localstack (e.g., http://minio:9000)
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
 
@@ -29,12 +33,17 @@ class Settings(BaseSettings):
     default_api_calls: int = 1000
     secret_key: str = "change-this-secret-key-in-production"
 
-    # Security
-    admin_username: str = "admin"
-    admin_password: str = "admin123"  # Change in production!
+    # Security - Use ACME default admin credentials
+    admin_username: str = "ece30861defaultadminuser"
+    admin_password: str = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
 
     # Logging
     log_level: str = "INFO"
+
+    @property
+    def is_local(self) -> bool:
+        """Check if running in local environment."""
+        return self.environment.lower() in ("local", "development")
 
     class Config:
         env_file = ".env"

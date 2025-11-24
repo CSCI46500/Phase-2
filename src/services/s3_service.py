@@ -5,8 +5,12 @@ Implements S3 operations as per CRUD_IMPLEMENTATION_PLAN.md
 import boto3
 from botocore.exceptions import ClientError
 import logging
-from typing import Optional
+from typing import Optional, List
 import os
+import zipfile
+import tempfile
+import io
+import fnmatch
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,23 +20,31 @@ class S3Helper:
     """Helper class for S3 operations."""
 
     def __init__(self):
-        """Initialize S3 client."""
+        """Initialize S3 client with support for MinIO/LocalStack."""
         self.bucket_name = settings.s3_bucket_name
         self.region = settings.s3_region
+        self.endpoint_url = settings.s3_endpoint_url
+
+        # Build client configuration
+        client_kwargs = {
+            'service_name': 's3',
+            'region_name': self.region,
+        }
+
+        # Add endpoint URL if specified (for MinIO, LocalStack, etc.)
+        if self.endpoint_url:
+            client_kwargs['endpoint_url'] = self.endpoint_url
+            logger.info(f"Using custom S3 endpoint: {self.endpoint_url}")
+
+        # Add credentials if provided
+        if settings.aws_access_key_id and settings.aws_secret_access_key:
+            client_kwargs['aws_access_key_id'] = settings.aws_access_key_id
+            client_kwargs['aws_secret_access_key'] = settings.aws_secret_access_key
 
         # Initialize boto3 client
-        if settings.aws_access_key_id and settings.aws_secret_access_key:
-            self.s3_client = boto3.client(
-                's3',
-                region_name=self.region,
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key
-            )
-        else:
-            # Use default credentials (IAM role, env vars, etc.)
-            self.s3_client = boto3.client('s3', region_name=self.region)
+        self.s3_client = boto3.client(**client_kwargs)
 
-        logger.info(f"S3Helper initialized for bucket: {self.bucket_name}")
+        logger.info(f"S3Helper initialized for bucket: {self.bucket_name} (environment: {settings.environment})")
 
     def upload_file(self, file_path: str, s3_key: str) -> bool:
         """
@@ -178,6 +190,122 @@ class S3Helper:
             Full S3 URL (s3://bucket/key)
         """
         return f"s3://{self.bucket_name}/{s3_key}"
+
+    def _get_component_file_patterns(self, component: str) -> List[str]:
+        """
+        Get file patterns for each component type.
+        Returns list of patterns to match files in the zip.
+        """
+        patterns = {
+            "weights": [
+                "*.pth", "*.pt", "*.bin", "*.safetensors", "*.ckpt",
+                "*.h5", "*.pb", "*.onnx", "*.tflite",
+                "pytorch_model.bin", "model.safetensors",
+                "**/pytorch_model*.bin", "**/model*.safetensors"
+            ],
+            "datasets": [
+                "*.csv", "*.json", "*.jsonl", "*.parquet", "*.arrow",
+                "*.txt", "data/*", "dataset/*", "datasets/*",
+                "**/data/**", "**/dataset/**", "**/datasets/**"
+            ],
+            "code": [
+                "*.py", "*.ipynb", "*.sh", "*.yaml", "*.yml",
+                "*.md", "README*", "requirements.txt", "setup.py",
+                "*.cfg", "*.ini", "*.toml"
+            ]
+        }
+        return patterns.get(component, [])
+
+    def _matches_component_pattern(self, filename: str, component: str) -> bool:
+        """Check if filename matches component patterns."""
+        patterns = self._get_component_file_patterns(component)
+
+        for pattern in patterns:
+            if fnmatch.fnmatch(filename.lower(), pattern.lower()):
+                return True
+            # Also check just the basename
+            if fnmatch.fnmatch(os.path.basename(filename).lower(), pattern.lower()):
+                return True
+        return False
+
+    def generate_component_download_url(
+        self,
+        s3_key: str,
+        component: str,
+        package_name: str,
+        version: str,
+        expiration: int = 300
+    ) -> Optional[str]:
+        """
+        Generate presigned URL for component-specific download.
+        Downloads the full zip, extracts matching files, creates new zip, uploads temporarily.
+
+        Args:
+            s3_key: S3 object key for full package
+            component: Component type ("weights", "datasets", "code")
+            package_name: Package name for temp file naming
+            version: Package version
+            expiration: URL expiration time in seconds
+
+        Returns:
+            Presigned URL or None if failed
+        """
+        try:
+            # Download the full package to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_download:
+                self.s3_client.download_fileobj(
+                    self.bucket_name,
+                    s3_key,
+                    temp_download
+                )
+                temp_download_path = temp_download.name
+
+            # Create filtered zip with only component files
+            temp_component_path = tempfile.mktemp(suffix=f"_{component}.zip")
+
+            with zipfile.ZipFile(temp_download_path, 'r') as source_zip:
+                with zipfile.ZipFile(temp_component_path, 'w', zipfile.ZIP_DEFLATED) as target_zip:
+                    # Filter and copy matching files
+                    matched_files = []
+                    for file_info in source_zip.filelist:
+                        if self._matches_component_pattern(file_info.filename, component):
+                            data = source_zip.read(file_info.filename)
+                            target_zip.writestr(file_info, data)
+                            matched_files.append(file_info.filename)
+
+                    logger.info(f"Component '{component}': matched {len(matched_files)} files")
+
+                    if not matched_files:
+                        logger.warning(f"No files matched component '{component}'")
+                        # Still create zip with a note
+                        target_zip.writestr(
+                            "README.txt",
+                            f"No {component} files found in this package.\n"
+                        )
+
+            # Upload component zip to temporary S3 location
+            component_s3_key = f"temp/{package_name}/{version}/{component}.zip"
+
+            with open(temp_component_path, 'rb') as f:
+                self.s3_client.upload_fileobj(f, self.bucket_name, component_s3_key)
+
+            # Clean up temp files
+            os.unlink(temp_download_path)
+            os.unlink(temp_component_path)
+
+            # Generate presigned URL for component zip
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': self.bucket_name, 'Key': component_s3_key},
+                ExpiresIn=expiration
+            )
+
+            logger.info(f"Generated component download URL for: {component_s3_key}")
+            return url
+
+        except Exception as e:
+            logger.error(f"Failed to generate component download URL: {e}")
+            return None
 
 
 # Global S3 helper instance
