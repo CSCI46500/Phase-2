@@ -45,8 +45,17 @@ class MetricsEvaluator:
         "treescore": 0.03          # Supplementary (lineage quality)
     }
 
-    def __init__(self, model_url: str, dataset_url: str, code_url: str):
-        """Initialize evaluator with resource URLs."""
+    def __init__(self, model_url: str, dataset_url: str, code_url: str, db_session=None, package_id=None):
+        """
+        Initialize evaluator with resource URLs.
+
+        Args:
+            model_url: URL to model repository
+            dataset_url: URL to dataset repository
+            code_url: URL to code repository
+            db_session: Optional database session for TreeScore calculation
+            package_id: Optional package ID for TreeScore calculation
+        """
         self.fetcher = DataFetcher(model_url, dataset_url, code_url)
 
         # Initialize metric calculators
@@ -61,7 +70,7 @@ class MetricsEvaluator:
             'code_quality': CodeQualityMetric(),
             'reproducibility': ReproducibilityMetric(),
             'reviewedness': ReviewednessMetric(),
-            'treescore': TreescoreMetric()
+            'treescore': TreescoreMetric(db_session=db_session, package_id=package_id)
         }
 
     def _execute_metric(self, metric_name: str, metric_calculator) -> Dict[str, Any]:
@@ -154,7 +163,7 @@ class MetricsEvaluator:
             bus_score * self.WEIGHTS["bus"] +
             perf_score * self.WEIGHTS["perf"] +
             ds_code_score * self.WEIGHTS["ds_code"] +
-            ds_quality * self.WEIGHTS["ds_quality"] +
+            ds_quality * self.WEIGHTS["dataset_quality"] +
             code_quality * self.WEIGHTS["code_quality"] +
             reproducibility * self.WEIGHTS["reproducibility"] +
             reviewedness * reviewedness_weight +

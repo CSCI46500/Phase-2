@@ -1,40 +1,66 @@
 # Git
 .git
 .gitignore
+.github
 
 # Python
 __pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-*.egg
-*.egg-info
-dist
-build
-.pytest_cache
-.coverage
-htmlcov
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+*.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.tox/
 
 # IDE
-.idea
 .vscode
+.idea
 *.swp
 *.swo
+*~
 
-# GitHub
-.github
+# OS
+.DS_Store
+Thumbs.db
 
-# Tests
-tests/__pycache__
+# Logs
+*.log
+logs/
 
 # Environment
 .env
-.venv
-env/
-venv/
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
 
 # Documentation
+docs/
 *.md
-!README.md
+
+# AWS
+.elasticbeanstalk/
+.aws/
+
+# Frontend (for backend Dockerfile)
+front-end/
+
+# Misc
+*.bak
+*.tmp
+temp/
+tmp/

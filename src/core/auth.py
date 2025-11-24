@@ -22,12 +22,18 @@ logger = logging.getLogger(__name__)
 def hash_password(password: str, salt: str) -> str:
     """Hash password with salt using bcrypt."""
     combined = (password + salt).encode()
+    # Bcrypt has a 72-byte limit, truncate if necessary
+    if len(combined) > 72:
+        combined = combined[:72]
     return bcrypt.hashpw(combined, bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, salt: str, password_hash: str) -> bool:
     """Verify password against stored hash."""
     combined = (password + salt).encode()
+    # Bcrypt has a 72-byte limit, truncate if necessary (must match hash_password)
+    if len(combined) > 72:
+        combined = combined[:72]
     try:
         return bcrypt.checkpw(combined, password_hash.encode())
     except Exception as e:

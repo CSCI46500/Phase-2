@@ -13,6 +13,8 @@ import tempfile
 import os
 import shutil
 import logging
+import time
+from datetime import datetime, timedelta
 
 from src.core.database import get_db, init_db
 from src.core.models import User, Package
@@ -29,8 +31,11 @@ from src.core.auth import (
 import src.crud as crud
 from src.services.s3_service import s3_helper
 from src.services.metrics_service import MetricsEvaluator
+from src.services.monitoring import metrics_collector, collect_and_persist_metrics, get_recent_metrics
 from src.core.config import settings
 from src.utils.logger import setup_logging
+from src.utils.license_compatibility import license_checker
+from src.utils.data_fetcher import DataFetcher
 
 # Setup logging
 setup_logging()
@@ -56,6 +61,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ========== Request Tracking Middleware ==========
+
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    """
+    Middleware to track all API requests for observability.
+    Records metrics for each request: endpoint, method, status, response time, errors.
+    """
+    start_time = time.time()
+    error_message = None
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception as e:
+        status_code = 500
+        error_message = str(e)
+        logger.error(f"Request failed: {request.method} {request.url.path} - {e}")
+        raise
+    finally:
+        # Calculate response time
+        response_time_ms = (time.time() - start_time) * 1000
+
+        # Record metrics (skip health check to avoid noise)
+        if request.url.path != "/health":
+            metrics_collector.record_request(
+                endpoint=request.url.path,
+                method=request.method,
+                status_code=status_code,
+                response_time_ms=response_time_ms,
+                error=error_message
+            )
+
+    return response
 
 
 # ========== Pydantic Models for Request/Response ==========
@@ -112,6 +153,21 @@ class PackageResponse(BaseModel):
         from_attributes = True
 
 
+class LicenseCheckRequest(BaseModel):
+    """License compatibility check request."""
+    github_url: str = Field(..., description="GitHub repository URL for the project")
+    model_id: UUID = Field(..., description="Package ID to check compatibility with")
+
+
+class LicenseCheckResponse(BaseModel):
+    """License compatibility check response."""
+    compatible: bool
+    github_license: str
+    model_license: str
+    reason: str
+    warnings: Optional[List[str]] = None
+
+
 # ========== Startup/Shutdown Events ==========
 
 @app.on_event("startup")
@@ -137,13 +193,18 @@ async def shutdown_event():
 # ========== Health Check ==========
 
 @app.get("/health")
-async def health_check(db: Session = Depends(get_db)):
+async def health_check(detailed: bool = False, db: Session = Depends(get_db)):
     """
-    Health check endpoint.
-    Returns system health status.
+    Enhanced health check endpoint with optional detailed metrics.
+
+    Query Parameters:
+    - detailed: If true, includes performance metrics and statistics
+
+    Sprint 3: Enhanced observability with request metrics, error rates, and performance data.
     """
     health = {
         "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
         "components": {}
     }
 
@@ -163,6 +224,40 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         health["components"]["s3"] = f"unhealthy: {str(e)}"
         # S3 not critical for health check
+
+    # Add detailed metrics if requested
+    if detailed:
+        current_metrics = metrics_collector.get_current_metrics()
+        health["metrics"] = {
+            "total_requests": current_metrics["total_requests"],
+            "successful_requests": current_metrics["successful_requests"],
+            "failed_requests": current_metrics["failed_requests"],
+            "error_rate_percent": current_metrics["error_rate"],
+            "avg_response_time_ms": current_metrics["avg_response_time_ms"],
+            "p95_response_time_ms": current_metrics["p95_response_time_ms"],
+            "p99_response_time_ms": current_metrics["p99_response_time_ms"],
+            "cpu_percent": current_metrics["cpu_percent"],
+            "memory_percent": current_metrics["memory_percent"],
+            "disk_percent": current_metrics["disk_percent"]
+        }
+
+        # Include top endpoints
+        endpoint_metrics = current_metrics.get("endpoint_metrics", {})
+        if endpoint_metrics:
+            sorted_endpoints = sorted(
+                endpoint_metrics.items(),
+                key=lambda x: x[1]["count"],
+                reverse=True
+            )[:5]  # Top 5 endpoints
+            health["top_endpoints"] = [
+                {
+                    "endpoint": endpoint,
+                    "count": data["count"],
+                    "errors": data["errors"],
+                    "avg_response_ms": data["avg_response_ms"]
+                }
+                for endpoint, data in sorted_endpoints
+            ]
 
     return health
 
@@ -258,15 +353,7 @@ async def upload_package(
         s3_path = s3_helper.build_full_s3_url(s3_key)
         size_bytes = os.path.getsize(temp_file_path)
 
-        # Run metrics evaluation
-        evaluator = MetricsEvaluator(
-            model_url=model_url,
-            dataset_url=dataset_url,
-            code_url=code_url
-        )
-        eval_result = evaluator.evaluate()
-
-        # Create package entry
+        # Create package entry first (so we have package_id for TreeScore)
         package = crud.create_package(
             db=db,
             name=name,
@@ -274,9 +361,24 @@ async def upload_package(
             uploader_id=user.id,
             s3_path=s3_path,
             description=description,
-            license=eval_result.get("license"),
+            license="",  # Will be updated after metrics evaluation
             size_bytes=size_bytes
         )
+
+        # Run metrics evaluation with package context for TreeScore
+        evaluator = MetricsEvaluator(
+            model_url=model_url,
+            dataset_url=dataset_url,
+            code_url=code_url,
+            db_session=db,
+            package_id=package.id
+        )
+        eval_result = evaluator.evaluate()
+
+        # Update package with license from evaluation
+        package.license = eval_result.get("license")
+        db.commit()
+        db.refresh(package)
 
         # Create metrics entry
         metrics_data = {
@@ -536,6 +638,7 @@ async def rate_package(
 @app.get("/package/{package_id}")
 async def get_package(
     package_id: UUID,
+    component: str = "full",  # Options: "full", "weights", "datasets", "code"
     user: User = Depends(require_permission("download")),
     db: Session = Depends(get_db),
     request: Request = None
@@ -545,6 +648,15 @@ async def get_package(
     As per CRUD plan: GET /package/{id}
     Returns presigned S3 URL for download.
     """
+    # Validate component parameter
+    valid_components = ["full", "weights", "datasets", "code"]
+    if component not in valid_components:
+        valid_list = ", ".join(valid_components)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid component. Must be one of: {valid_list}"
+        )
+
     package = crud.get_package_by_id(db, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
@@ -557,8 +669,18 @@ async def get_package(
     # Extract S3 key from s3:// URL
     s3_key = package.s3_path.replace(f"s3://{s3_helper.bucket_name}/", "")
 
-    # Generate presigned URL (expires in 5 minutes)
-    presigned_url = s3_helper.generate_presigned_url(s3_key, expiration=300)
+    # For full package, return direct presigned URL
+    if component == "full":
+        presigned_url = s3_helper.generate_presigned_url(s3_key, expiration=300)
+    else:
+        # For component downloads, create a filtered zip
+        presigned_url = s3_helper.generate_component_download_url(
+            s3_key,
+            component,
+            package.name,
+            package.version,
+            expiration=300
+        )
 
     if not presigned_url:
         raise HTTPException(status_code=500, detail="Failed to generate download URL")
@@ -567,6 +689,7 @@ async def get_package(
         "package_id": str(package_id),
         "name": package.name,
         "version": package.version,
+        "component": component,
         "download_url": presigned_url,
         "expires_in_seconds": 300
     }
@@ -755,6 +878,139 @@ async def delete_user(
     return {
         "message": "User deleted successfully",
         "user_id": str(user_id)
+    }
+
+
+@app.post("/package/license-check", response_model=LicenseCheckResponse)
+async def check_license_compatibility(
+    request: LicenseCheckRequest,
+    user: User = Depends(require_permission("search")),
+    db: Session = Depends(get_db)
+):
+    """
+    Check license compatibility between a GitHub project and a model package.
+    Sprint 2: License Compatibility Checker
+
+    This endpoint:
+    1. Fetches license from GitHub repository
+    2. Gets license from package in database
+    3. Uses license compatibility checker to determine compatibility
+
+    Args:
+        github_url: GitHub repository URL (e.g., https://github.com/user/repo)
+        model_id: Package UUID to check compatibility with
+
+    Returns:
+        Compatibility result with licenses and explanation
+    """
+    logger.info(f"Checking license compatibility: {request.github_url} with package {request.model_id}")
+
+    # Get package from database
+    package = crud.get_package_by_id(db, request.model_id)
+    if not package:
+        raise HTTPException(status_code=404, detail="Package not found")
+
+    # Get package license
+    model_license = package.license or "unknown"
+
+    # Fetch GitHub license using DataFetcher
+    try:
+        fetcher = DataFetcher(
+            model_url=request.github_url,
+            dataset_url="",
+            code_url=""
+        )
+        github_license = fetcher.get_license()
+        if not github_license:
+            github_license = "unknown"
+    except Exception as e:
+        logger.error(f"Failed to fetch GitHub license: {e}")
+        github_license = "unknown"
+
+    # Check compatibility
+    is_compatible, reason = license_checker.are_compatible(github_license, model_license)
+
+    # Check for warnings (e.g., "result must be X")
+    warnings = []
+    if is_compatible and ("must be" in reason.lower() or "result" in reason.lower()):
+        warnings.append(reason)
+
+    logger.info(
+        f"License check result: {is_compatible} - "
+        f"GitHub: {github_license}, Model: {model_license}"
+    )
+
+    return LicenseCheckResponse(
+        compatible=is_compatible,
+        github_license=github_license,
+        model_license=model_license,
+        reason=reason,
+        warnings=warnings if warnings else None
+    )
+
+
+@app.get("/logs")
+async def get_logs(
+    level: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 100,
+    admin: User = Depends(require_admin)
+):
+    """
+    Get application logs with filtering.
+    Sprint 3: Logs endpoint for observability.
+
+    Query Parameters:
+    - level: Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    - start_time: ISO format datetime for range start
+    - end_time: ISO format datetime for range end
+    - offset: Pagination offset (default: 0)
+    - limit: Max logs to return (default: 100, max: 1000)
+
+    Returns recent errors tracked by the metrics collector.
+    """
+    # Validate limit
+    limit = min(limit, 1000)
+
+    # Get recent errors from metrics collector
+    recent_errors = list(metrics_collector.recent_errors)
+
+    # Apply filters
+    filtered_errors = recent_errors
+
+    # Filter by time range if provided
+    if start_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            filtered_errors = [
+                e for e in filtered_errors
+                if datetime.fromisoformat(e["timestamp"].replace('Z', '+00:00')) >= start_dt
+            ]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_time format. Use ISO format.")
+
+    if end_time:
+        try:
+            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            filtered_errors = [
+                e for e in filtered_errors
+                if datetime.fromisoformat(e["timestamp"].replace('Z', '+00:00')) <= end_dt
+            ]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_time format. Use ISO format.")
+
+    # Apply pagination
+    total = len(filtered_errors)
+    paginated_errors = filtered_errors[offset:offset+limit]
+
+    return {
+        "logs": paginated_errors,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "note": "Showing recent request errors. For full logs, check application log files."
     }
 
 
