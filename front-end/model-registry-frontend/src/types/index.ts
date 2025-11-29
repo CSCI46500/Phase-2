@@ -1,12 +1,21 @@
 // Using types for internal components (recommended for private codebases)
 export type ModelMetrics = {
+  // Phase 1 metrics
   rampUp: number;
   correctness: number;
   busFactor: number;
   responsiveMaintainer: number;
   license: number;
+
+  // Phase 2 metrics
   reviewedness?: number;
   reproducibility?: number;
+  treeScore?: number;
+  performanceClaims?: number;
+  datasetQuality?: number;
+  codeQuality?: number;
+  datasetAndCodeScore?: number;
+  sizeScore?: any; // Can be number or object with platform-specific scores
 };
 
 export type Artifact = {

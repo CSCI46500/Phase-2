@@ -223,6 +223,134 @@ class HuggingFaceIngestionService:
         return name, version
 
     @staticmethod
+    def extract_urls_from_readme(model_path: str, metadata: Dict) -> Dict[str, Optional[str]]:
+        """
+        Extract dataset, code, and model URLs from HuggingFace README and metadata.
+
+        This is used to properly score dataset_quality, code_quality, etc. by finding
+        the actual dataset/code repos referenced in the model card.
+
+        Args:
+            model_path: Local path to downloaded model
+            metadata: Model metadata from HuggingFace Hub
+
+        Returns:
+            Dict with keys: 'dataset_url', 'code_url', 'model_url'
+        """
+        result = {
+            "dataset_url": None,
+            "code_url": None,
+            "model_url": None
+        }
+
+        # 1. Check README.md for URLs
+        readme_path = os.path.join(model_path, "README.md")
+        if os.path.exists(readme_path):
+            try:
+                with open(readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Extract YAML frontmatter
+                if content.startswith('---'):
+                    parts = content.split('---', 2)
+                    if len(parts) >= 3:
+                        try:
+                            import yaml
+                            frontmatter = yaml.safe_load(parts[1])
+
+                            if isinstance(frontmatter, dict):
+                                # Look for dataset references
+                                if "datasets" in frontmatter:
+                                    datasets = frontmatter["datasets"]
+                                    if isinstance(datasets, list) and len(datasets) > 0:
+                                        # Take first dataset
+                                        dataset_id = datasets[0]
+                                        if isinstance(dataset_id, str):
+                                            # Convert to HuggingFace URL
+                                            if "/" in dataset_id and not dataset_id.startswith("http"):
+                                                result["dataset_url"] = f"https://huggingface.co/datasets/{dataset_id}"
+                                            elif dataset_id.startswith("http"):
+                                                result["dataset_url"] = dataset_id
+
+                                # Look for code/GitHub repo
+                                for field in ["model-index", "repo", "github", "code"]:
+                                    if field in frontmatter:
+                                        val = frontmatter[field]
+                                        if isinstance(val, str) and ("github.com" in val or "gitlab.com" in val):
+                                            result["code_url"] = val
+                                            break
+                                        elif isinstance(val, list) and len(val) > 0:
+                                            # model-index is often a list of dicts
+                                            if isinstance(val[0], dict) and "repo" in val[0]:
+                                                repo = val[0]["repo"]
+                                                if "github.com" in repo or "gitlab.com" in repo:
+                                                    result["code_url"] = repo
+                                                    break
+                        except Exception as e:
+                            logger.debug(f"Could not parse YAML frontmatter: {e}")
+
+                # Also search README body for common patterns
+                readme_body = parts[2] if len(parts) >= 3 else content
+
+                # Look for dataset links in markdown
+                import re
+
+                # Pattern: [dataset](url) or "trained on [dataset](url)"
+                dataset_patterns = [
+                    r'trained on.*?\[([^\]]+)\]\((https://huggingface\.co/datasets/[^\)]+)\)',
+                    r'dataset.*?\[([^\]]+)\]\((https://huggingface\.co/datasets/[^\)]+)\)',
+                    r'\[([^\]]*dataset[^\]]*)\]\((https://huggingface\.co/datasets/[^\)]+)\)',
+                ]
+
+                for pattern in dataset_patterns:
+                    match = re.search(pattern, readme_body, re.IGNORECASE)
+                    if match and not result["dataset_url"]:
+                        result["dataset_url"] = match.group(2)
+                        logger.info(f"Found dataset URL in README: {result['dataset_url']}")
+                        break
+
+                # Look for GitHub/GitLab code links
+                code_patterns = [
+                    r'github\.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)',
+                    r'gitlab\.com/([a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+)',
+                ]
+
+                for pattern in code_patterns:
+                    match = re.search(pattern, readme_body, re.IGNORECASE)
+                    if match and not result["code_url"]:
+                        result["code_url"] = f"https://{match.group(0)}"
+                        logger.info(f"Found code URL in README: {result['code_url']}")
+                        break
+
+            except Exception as e:
+                logger.warning(f"Failed to parse README.md: {e}")
+
+        # 2. Check config.json for dataset references
+        config_path = os.path.join(model_path, "config.json")
+        if os.path.exists(config_path) and not result["dataset_url"]:
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+
+                # Some models specify dataset in config
+                if "dataset" in config:
+                    dataset_id = config["dataset"]
+                    if isinstance(dataset_id, str) and "/" in dataset_id:
+                        result["dataset_url"] = f"https://huggingface.co/datasets/{dataset_id}"
+                        logger.info(f"Found dataset in config.json: {result['dataset_url']}")
+
+            except Exception as e:
+                logger.debug(f"Could not parse config.json: {e}")
+
+        # 3. Use HuggingFace model URL as model_url
+        if metadata.get("model_id"):
+            result["model_url"] = f"https://huggingface.co/{metadata['model_id']}"
+
+        logger.info(f"Extracted URLs - Dataset: {result['dataset_url']}, Code: {result['code_url']}, Model: {result['model_url']}")
+
+        return result
+
+    @staticmethod
     def extract_parent_models(model_path: str, metadata: Dict) -> List[str]:
         """
         Extract parent model references from HuggingFace model metadata.

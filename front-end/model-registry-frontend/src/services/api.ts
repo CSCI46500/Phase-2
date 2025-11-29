@@ -108,11 +108,22 @@ export const modelRegistryAPI = {
         createdAt: pkg.upload_date,
         updatedAt: pkg.upload_date,
         metrics: {
-          rampUp: 0,
-          correctness: 0,
-          busFactor: 0,
-          responsiveMaintainer: 0,
-          license: 0,
+          // Phase 1 metrics
+          rampUp: pkg.metrics?.ramp_up || 0,
+          correctness: pkg.metrics?.correctness || 0,
+          busFactor: pkg.metrics?.bus_factor || 0,
+          responsiveMaintainer: pkg.metrics?.responsive_maintainer || 0,
+          license: pkg.metrics?.license_score || 0,
+
+          // Phase 2 metrics
+          reviewedness: pkg.metrics?.reviewedness,
+          reproducibility: pkg.metrics?.reproducibility,
+          treeScore: pkg.metrics?.tree_score,
+          performanceClaims: pkg.metrics?.performance_claims,
+          datasetQuality: pkg.metrics?.dataset_quality,
+          codeQuality: pkg.metrics?.code_quality,
+          datasetAndCodeScore: pkg.metrics?.dataset_and_code_score,
+          sizeScore: pkg.metrics?.size_score,
         }
       })),
       total: response.data.total,
@@ -136,13 +147,22 @@ export const modelRegistryAPI = {
       createdAt: response.data.upload_date,
       updatedAt: response.data.upload_date,
       metrics: {
+        // Phase 1 metrics
         rampUp: response.data.metrics?.ramp_up || 0,
-        correctness: response.data.metrics?.code_quality || 0,
+        correctness: response.data.metrics?.correctness || 0,
         busFactor: response.data.metrics?.bus_factor || 0,
-        responsiveMaintainer: response.data.metrics?.reviewedness || 0,
+        responsiveMaintainer: response.data.metrics?.responsive_maintainer || 0,
         license: response.data.metrics?.license_score || 0,
+
+        // Phase 2 metrics
         reviewedness: response.data.metrics?.reviewedness,
         reproducibility: response.data.metrics?.reproducibility,
+        treeScore: response.data.metrics?.tree_score,
+        performanceClaims: response.data.metrics?.performance_claims,
+        datasetQuality: response.data.metrics?.dataset_quality,
+        codeQuality: response.data.metrics?.code_quality,
+        datasetAndCodeScore: response.data.metrics?.dataset_and_code_score,
+        sizeScore: response.data.metrics?.size_score,
       }
     };
   },

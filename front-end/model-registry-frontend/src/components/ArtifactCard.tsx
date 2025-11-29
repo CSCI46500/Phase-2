@@ -41,8 +41,8 @@ const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact }) => {
       
       <div className="artifact-scores">
         <ScoreBadge label="Overall" score={artifact.score} isPrimary />
+        <ScoreBadge label="License" score={artifact.metrics.license} />
         <ScoreBadge label="Ramp-up" score={artifact.metrics.rampUp} />
-        <ScoreBadge label="Correctness" score={artifact.metrics.correctness} />
         <ScoreBadge label="Bus Factor" score={artifact.metrics.busFactor} />
       </div>
 
@@ -53,16 +53,37 @@ const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact }) => {
           role="region"
           aria-labelledby={`expanded-heading-${artifact.id}`}
         >
-          <h4 id={`expanded-heading-${artifact.id}`}>Additional Metrics:</h4>
+          <h4 id={`expanded-heading-${artifact.id}`}>All Metrics:</h4>
           <dl className="metrics-list">
+            {/* Phase 1 Metrics */}
+            <div className="metric-row">
+              <dt>Correctness:</dt>
+              <dd>{artifact.metrics.correctness.toFixed(2)}</dd>
+            </div>
             <div className="metric-row">
               <dt>Responsive Maintainer:</dt>
               <dd>{artifact.metrics.responsiveMaintainer.toFixed(2)}</dd>
             </div>
-            <div className="metric-row">
-              <dt>License:</dt>
-              <dd>{artifact.metrics.license.toFixed(2)}</dd>
-            </div>
+
+            {/* Phase 2 Metrics */}
+            {artifact.metrics.codeQuality !== undefined && (
+              <div className="metric-row">
+                <dt>Code Quality:</dt>
+                <dd>{artifact.metrics.codeQuality.toFixed(2)}</dd>
+              </div>
+            )}
+            {artifact.metrics.datasetQuality !== undefined && (
+              <div className="metric-row">
+                <dt>Dataset Quality:</dt>
+                <dd>{artifact.metrics.datasetQuality.toFixed(2)}</dd>
+              </div>
+            )}
+            {artifact.metrics.datasetAndCodeScore !== undefined && (
+              <div className="metric-row">
+                <dt>Dataset & Code Score:</dt>
+                <dd>{artifact.metrics.datasetAndCodeScore.toFixed(2)}</dd>
+              </div>
+            )}
             {artifact.metrics.reviewedness !== undefined && (
               <div className="metric-row">
                 <dt>Reviewedness:</dt>
@@ -73,6 +94,29 @@ const ArtifactCard: React.FC<ArtifactCardProps> = ({ artifact }) => {
               <div className="metric-row">
                 <dt>Reproducibility:</dt>
                 <dd>{artifact.metrics.reproducibility.toFixed(2)}</dd>
+              </div>
+            )}
+            {artifact.metrics.performanceClaims !== undefined && (
+              <div className="metric-row">
+                <dt>Performance Claims:</dt>
+                <dd>{artifact.metrics.performanceClaims.toFixed(2)}</dd>
+              </div>
+            )}
+            {artifact.metrics.treeScore !== undefined && (
+              <div className="metric-row">
+                <dt>Tree Score:</dt>
+                <dd>{artifact.metrics.treeScore.toFixed(2)}</dd>
+              </div>
+            )}
+            {artifact.metrics.sizeScore !== undefined && (
+              <div className="metric-row">
+                <dt>Size Score:</dt>
+                <dd>
+                  {typeof artifact.metrics.sizeScore === 'number'
+                    ? artifact.metrics.sizeScore.toFixed(2)
+                    : `AWS: ${artifact.metrics.sizeScore?.aws_server?.toFixed(2) || 'N/A'}, Desktop: ${artifact.metrics.sizeScore?.desktop_pc?.toFixed(2) || 'N/A'}`
+                  }
+                </dd>
               </div>
             )}
           </dl>
