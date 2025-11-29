@@ -15,6 +15,7 @@ python-dotenv
 anthropic
 huggingface_hub
 requests
+PyYAML
 
 # Monitoring
 psutil

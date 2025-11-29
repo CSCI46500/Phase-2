@@ -152,11 +152,13 @@ def get_package_lineage(db: Session, package_id: UUID) -> List[Dict[str, Any]]:
     Get lineage tree for a package (recursive parents).
     Returns list of packages in lineage with depth.
     """
+    from sqlalchemy import text
+
     # Use raw SQL for recursive CTE as per plan
-    query = """
+    query = text("""
     WITH RECURSIVE lineage_tree AS (
         -- Base case: current package
-        SELECT id, name, version, NULL as parent_id, 0 as depth
+        SELECT id, name, version, NULL::uuid as parent_id, 0 as depth
         FROM packages
         WHERE id = :package_id
 
@@ -169,7 +171,7 @@ def get_package_lineage(db: Session, package_id: UUID) -> List[Dict[str, Any]]:
         JOIN lineage_tree lt ON l.package_id = lt.id
     )
     SELECT * FROM lineage_tree ORDER BY depth;
-    """
+    """)
 
     result = db.execute(query, {"package_id": str(package_id)})
     lineage = []

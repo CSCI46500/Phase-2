@@ -494,9 +494,18 @@ async def ingest_huggingface_model(
         # Check if package already exists
         existing = crud.get_package_by_name_version(db, name, version)
         if existing:
+            logger.warning(f"Package '{name}' version '{version}' already exists (id={existing.id})")
             raise HTTPException(
-                status_code=400,
-                detail=f"Package '{name}' version '{version}' already exists. Use a different version."
+                status_code=409,  # 409 Conflict
+                detail={
+                    "error": "Package already exists",
+                    "package_id": str(existing.id),
+                    "name": name,
+                    "version": version,
+                    "message": f"Package '{name}' version '{version}' already exists in the registry. "
+                               f"If you want to upload this model again, please use a different version number "
+                               f"(e.g., '1.0.1' or '2.0.0')."
+                }
             )
 
         # Create zip file
@@ -504,80 +513,112 @@ async def ingest_huggingface_model(
         logger.info(f"Creating zip package from: {model_path}")
         size_bytes = hf_service.create_package_zip(model_path, temp_zip_path)
 
-        # Extract license from HuggingFace metadata
-        # HuggingFace models don't have GitHub repos, so we extract license from tags
-        license_str = "unknown"
-        license_score = 0.0
+        # Extract URLs from README and metadata for metrics evaluation
+        logger.info("Extracting dataset/code URLs from model metadata...")
+        extracted_urls = hf_service.extract_urls_from_readme(model_path, metadata)
 
-        if metadata.get("tags"):
-            for tag in metadata["tags"]:
-                if tag.startswith("license:"):
-                    license_str = tag.replace("license:", "")
-                    # Score license: 1.0 for known permissive licenses, 0.5 for others, 0 for unknown
-                    permissive_licenses = ["apache-2.0", "mit", "bsd", "bsd-3-clause", "cc-by-4.0", "cc0-1.0"]
-                    if license_str in permissive_licenses:
-                        license_score = 1.0
-                    elif license_str != "unknown":
-                        license_score = 0.5
-                    logger.info(f"Extracted license from HuggingFace: {license_str} (score: {license_score})")
-                    break
+        model_url = extracted_urls.get("model_url") or f"https://huggingface.co/{model_id}"
+        dataset_url = extracted_urls.get("dataset_url") or ""
+        code_url = extracted_urls.get("code_url") or ""
 
-        # For HuggingFace models, create a simplified eval_result
-        # GitHub-based metrics will be 0 or -1 (not applicable)
-        eval_result = {
-            "license": license_score,
-            "size_score": 1.0,  # Will be validated separately based on actual size
-            "ramp_up_time": 0.0,  # Not applicable for HuggingFace models
-            "bus_factor": 0.0,  # Not applicable for HuggingFace models
-            "performance_claims": 0.0,  # Not applicable for HuggingFace models
-            "dataset_and_code_score": 0.0,  # Not applicable for HuggingFace models
-            "dataset_quality": 0.0,  # Not applicable for HuggingFace models
-            "code_quality": 0.0,  # Not applicable for HuggingFace models
-            "reproducibility": 0.0,  # Not applicable for HuggingFace models
-            "reviewedness": -1,  # -1 indicates no GitHub repo
-            "treescore": 0.0,  # Will be calculated if parent models exist
-            "net_score": license_score * 0.15  # Only license contributes to net score
-        }
+        logger.info(f"Using URLs for metrics - Model: {model_url}, Dataset: {dataset_url}, Code: {code_url}")
 
-        # Validate metrics meet minimum threshold
-        # For HuggingFace models, use relaxed validation (only license)
-        is_valid, validation_msg = validate_huggingface_metrics(eval_result, threshold=0.5)
-        if not is_valid:
-            logger.error(f"Model {model_id} failed metric validation: {validation_msg}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Package does not meet minimum quality requirements. {validation_msg}"
-            )
-
-        logger.info(f"Metrics validation passed for {model_id}")
-
-        # Upload to S3
-        s3_key = s3_helper.build_s3_path(name, version)
-        logger.info(f"Uploading to S3: {s3_key}")
-        success = s3_helper.upload_file(temp_zip_path, s3_key)
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to upload to S3")
-
-        s3_path = s3_helper.build_full_s3_url(s3_key)
-
-        # Prepare description
-        if not description:
-            description = f"HuggingFace model: {model_id}"
-            if metadata.get("pipeline_tag"):
-                description += f" ({metadata['pipeline_tag']})"
-
-        # Create package entry
+        # Create package entry first (so we have package_id for TreeScore)
         package = crud.create_package(
             db=db,
             name=name,
             version=version,
             uploader_id=user.id,
-            s3_path=s3_path,
-            description=description,
-            license=license_str,
+            s3_path="",  # Will be updated after S3 upload
+            description=description or f"HuggingFace model: {model_id}",
+            license="",  # Will be updated after metrics evaluation
             size_bytes=size_bytes
         )
+
+        # Extract license string from HuggingFace tags first
+        license_str = "unknown"
+        license_score = 0.0
+        if metadata.get("tags"):
+            for tag in metadata["tags"]:
+                if tag.startswith("license:"):
+                    license_str = tag.replace("license:", "")
+                    # Score license: 1.0 for compatible licenses, 0.0 otherwise (binary scoring)
+                    # Compatible licenses from Phase 1 & 2 requirements
+                    compatible_licenses = [
+                        "apache-2.0", "apache", "mit",
+                        "bsd", "bsd-2-clause", "bsd-3-clause",
+                        "gpl", "gpl-2.0", "gpl-3.0",
+                        "lgpl", "lgpl-2.1", "lgpl-3.0",
+                        "cc0", "cc0-1.0", "cc-by-4.0",
+                        "unlicense", "public domain"
+                    ]
+                    if license_str.lower() in compatible_licenses:
+                        license_score = 1.0
+                    else:
+                        license_score = 0.0
+                    logger.info(f"Extracted license from HuggingFace metadata: {license_str} (score: {license_score})")
+                    break
+
+        # Run metrics evaluation with extracted URLs
+        logger.info("Running metrics evaluation...")
+        evaluator = MetricsEvaluator(
+            model_url=model_url,
+            dataset_url=dataset_url,
+            code_url=code_url,
+            db_session=db,
+            package_id=package.id
+        )
+        eval_result = evaluator.evaluate()
+
+        # Override license score with the one from HuggingFace tags (more reliable)
+        if license_score > 0:
+            logger.info(f"Overriding license score from {eval_result.get('license', 0.0)} to {license_score}")
+            eval_result["license"] = license_score
+
+        # Update package with license
+        package.license = license_str
+        db.commit()
+        db.refresh(package)
+
+        # Validate metrics meet minimum threshold
+        # Use HuggingFace-specific validation (only checks license, not GitHub-based metrics)
+        is_valid, validation_msg = validate_huggingface_metrics(eval_result, threshold=0.5)
+        if not is_valid:
+            logger.error(f"Model {model_id} failed metric validation: {validation_msg}")
+            # Delete the package we just created since validation failed
+            crud.delete_package(db, package.id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Package does not meet minimum quality requirements. {validation_msg}"
+            )
+
+        logger.info(f"HuggingFace metrics validation passed for {model_id}")
+
+        # Upload to S3
+        s3_key = s3_helper.build_s3_path(name, version)
+        logger.info(f"Uploading to S3: {s3_key}")
+
+        # Check if file already exists in S3 (edge case: previous upload succeeded but DB failed)
+        try:
+            s3_helper.s3_client.head_object(Bucket=s3_helper.bucket_name, Key=s3_key)
+            logger.warning(f"S3 file already exists: {s3_key}, will overwrite")
+        except Exception:
+            # File doesn't exist, that's expected
+            pass
+
+        success = s3_helper.upload_file(temp_zip_path, s3_key)
+
+        if not success:
+            # Delete package if S3 upload fails
+            crud.delete_package(db, package.id)
+            raise HTTPException(status_code=500, detail="Failed to upload to S3")
+
+        s3_path = s3_helper.build_full_s3_url(s3_key)
+
+        # Update package with S3 path
+        package.s3_path = s3_path
+        db.commit()
+        db.refresh(package)
 
         # Create metrics entry
         metrics_data = {
@@ -801,7 +842,25 @@ async def search_packages(
             "description": pkg.description,
             "license": pkg.license,
             "net_score": metrics.net_score if metrics else None,
-            "upload_date": pkg.upload_date.isoformat() if pkg.upload_date else None
+            "upload_date": pkg.upload_date.isoformat() if pkg.upload_date else None,
+            "metrics": {
+                "license_score": metrics.license_score if metrics else None,
+                "bus_factor": metrics.bus_factor if metrics else None,
+                "ramp_up": metrics.ramp_up if metrics else None,
+                "code_quality": metrics.code_quality if metrics else None,
+                "dataset_quality": metrics.dataset_quality if metrics else None,
+                "correctness": metrics.correctness if metrics else None,
+                "responsive_maintainer": metrics.responsive_maintainer if metrics else None,
+                "reviewedness": metrics.reviewedness if metrics else None,
+                "reproducibility": metrics.reproducibility if metrics else None,
+                "tree_score": metrics.tree_score if metrics else None,
+                "performance_claims": metrics.performance_claims if metrics else None,
+                "dataset_and_code_score": metrics.dataset_and_code_score if metrics else None,
+                "size_score": metrics.size_score if metrics else None,
+                "good_pinning_practice": metrics.good_pinning_practice if metrics else None,
+                "pull_request": metrics.pull_request if metrics else None,
+                "net_score": metrics.net_score if metrics else None
+            } if metrics else None
         })
 
     return {

@@ -361,7 +361,7 @@ class ReproducibilityMetric:
 
     Scoring:
     - 0: No code provided or doesn't run
-    - 0.5: Runs with debugging/modifications
+    - 0.5: Runs with agent debugging it
     - 1: Runs with no changes
     """
 
@@ -370,25 +370,29 @@ class ReproducibilityMetric:
         start_time = time.time()
 
         try:
-            # Fetch model README/card
-            readme_text = fetcher.fetch_readme("model").lower()
+            # Fetch model README/card (need original text, not lowercased)
+            readme_text = fetcher.fetch_readme("model")
+            readme_lower = readme_text.lower()
 
             # Check if there's demo/example code in the model card
             code_indicators = ["```python", "```py", "from transformers", "import torch", "pipeline("]
-            has_code = any(indicator in readme_text for indicator in code_indicators)
+            has_code = any(indicator in readme_lower for indicator in code_indicators)
 
             if not has_code:
                 # No code provided
                 score = 0.0
                 logger.debug("Reproducibility score: 0.0 (no demo code found)")
             else:
-                # For now, we assign 0.5 as we can't actually execute the code
-                # In a full implementation, this would:
-                # 1. Extract code from model card
-                # 2. Attempt to run it in a sandbox
-                # 3. Score based on whether it runs successfully
-                score = 0.5
-                logger.debug("Reproducibility score: 0.5 (demo code found, not tested)")
+                # Extract Python code blocks from README
+                code_blocks = self._extract_code_blocks(readme_text)
+
+                if not code_blocks:
+                    score = 0.0
+                    logger.debug("Reproducibility score: 0.0 (code indicators found but no extractable code)")
+                else:
+                    # Try to run the first substantial code block
+                    score = self._test_code_execution(code_blocks[0])
+                    logger.debug(f"Reproducibility score: {score} (code execution tested)")
 
         except Exception as e:
             logger.warning(f"Error calculating reproducibility metric: {e}")
@@ -396,6 +400,88 @@ class ReproducibilityMetric:
 
         latency_ms = int((time.time() - start_time) * 1000)
         return score, latency_ms
+
+    def _extract_code_blocks(self, readme_text: str) -> list:
+        """Extract Python code blocks from README markdown."""
+        import re
+
+        # Pattern to match ```python or ```py code blocks
+        pattern = r'```(?:python|py)\s*\n(.*?)```'
+        matches = re.findall(pattern, readme_text, re.DOTALL | re.IGNORECASE)
+
+        # Filter out trivial examples (less than 2 lines)
+        substantial_blocks = [
+            block.strip() for block in matches
+            if len(block.strip().split('\n')) >= 2
+        ]
+
+        return substantial_blocks
+
+    def _test_code_execution(self, code: str) -> float:
+        """
+        Test if code executes successfully.
+
+        Returns:
+        - 1.0: Runs without errors
+        - 0.5: Would run with LLM debugging (detected common fixable issues)
+        - 0.0: Doesn't run
+        """
+        import subprocess
+        import tempfile
+        import os
+
+        try:
+            # Create a temporary Python file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+                f.write(code)
+                temp_file = f.name
+
+            try:
+                # Try to run the code with a short timeout
+                result = subprocess.run(
+                    ['python3', temp_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=5  # 5 second timeout
+                )
+
+                if result.returncode == 0:
+                    # Code ran successfully
+                    return 1.0
+                else:
+                    # Check if errors are fixable by an agent
+                    error_output = result.stderr.lower()
+
+                    # Common fixable issues
+                    fixable_patterns = [
+                        'no module named',  # Missing imports
+                        'importerror',
+                        'modulenotfounderror',
+                        'name .* is not defined',  # Missing variable definitions
+                        'indentationerror',  # Formatting issues
+                    ]
+
+                    is_fixable = any(pattern in error_output for pattern in fixable_patterns)
+
+                    if is_fixable:
+                        logger.debug(f"Code has fixable errors: {result.stderr[:100]}")
+                        return 0.5
+                    else:
+                        logger.debug(f"Code has unfixable errors: {result.stderr[:100]}")
+                        return 0.0
+
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+
+        except subprocess.TimeoutExpired:
+            # Code runs but takes too long (might be waiting for input or infinite loop)
+            logger.debug("Code execution timed out")
+            return 0.5  # Might work with modifications
+        except Exception as e:
+            logger.debug(f"Error testing code execution: {e}")
+            return 0.0
 
 
 class ReviewednessMetric:

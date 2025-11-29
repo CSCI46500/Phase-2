@@ -1,10 +1,28 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import IngestPackage from './components/IngestPackage';
 import SearchArtifacts from './components/SearchArtifacts';
 import HealthDashboard from './components/HealthDashboard';
+import { modelRegistryAPI } from './services/api';
 import './App.css';
 
 const App: React.FC = () => {
+  // Authenticate on app load
+  useEffect(() => {
+    const authenticate = async () => {
+      try {
+        await modelRegistryAPI.authenticate(
+          'ece30861defaultadminuser',
+          'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
+        );
+        console.log('Authentication successful');
+      } catch (error) {
+        console.error('Failed to authenticate:', error);
+      }
+    };
+    authenticate();
+  }, []);
+
   return (
     <Router>
       <div className="app">
