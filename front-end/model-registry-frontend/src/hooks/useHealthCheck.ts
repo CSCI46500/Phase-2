@@ -29,7 +29,7 @@ export const useHealthCheck = (refreshInterval: number | null = null): UseHealth
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<number | null>(null);
 
   const fetchHealth = useCallback(async () => {
     try {

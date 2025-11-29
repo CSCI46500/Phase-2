@@ -17,6 +17,17 @@ const IngestPackage: React.FC = () => {
     setResponse(null);
 
     try {
+      // Authenticate first with default admin credentials
+      // In production, this should be handled through a proper login flow
+      try {
+        await modelRegistryAPI.authenticate(
+          'ece30861defaultadminuser',
+          'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
+        );
+      } catch (authErr) {
+        throw new Error('Failed to authenticate with the API. Please check your credentials.');
+      }
+
       // Extract model ID from URL if a full URL is provided
       let extractedModelId = modelId;
       if (modelId.includes('huggingface.co/')) {

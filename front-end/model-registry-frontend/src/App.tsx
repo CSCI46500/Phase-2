@@ -2,7 +2,6 @@ import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-rou
 import IngestPackage from './components/IngestPackage';
 import SearchArtifacts from './components/SearchArtifacts';
 import HealthDashboard from './components/HealthDashboard';
-import LogViewer from './components/LogViewer';
 import './App.css';
 
 const App: React.FC = () => {

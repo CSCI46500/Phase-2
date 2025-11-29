@@ -1,6 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import type {
-  IngestRequest,
   IngestResponse,
   SearchResponse,
   Artifact,
@@ -17,14 +16,11 @@ const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 60000, // 60 second timeout for package ingestion
+  timeout: 900000, // 15 minute timeout for package ingestion (large models take time)
 });
 
 // Token management
-let authToken: string | null = null;
-
 export const setAuthToken = (token: string | null) => {
-  authToken = token;
   if (token) {
     apiClient.defaults.headers.common['X-Authorization'] = token;
   } else {

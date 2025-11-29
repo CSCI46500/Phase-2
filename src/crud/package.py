@@ -47,6 +47,47 @@ def create_package(
     return package
 
 
+def create_lineage(
+    db: Session,
+    package_id: UUID,
+    parent_id: UUID,
+    relationship_type: str = "derived_from"
+):
+    """
+    Create a lineage relationship between a package and its parent.
+
+    Args:
+        db: Database session
+        package_id: ID of the child package
+        parent_id: ID of the parent package
+        relationship_type: Type of relationship (e.g., "derived_from", "forked_from")
+    """
+    from src.core.models import Lineage
+
+    # Check if lineage already exists
+    existing = db.query(Lineage).filter(
+        Lineage.package_id == package_id,
+        Lineage.parent_id == parent_id
+    ).first()
+
+    if existing:
+        logger.debug(f"Lineage already exists: {package_id} -> {parent_id}")
+        return existing
+
+    lineage = Lineage(
+        package_id=package_id,
+        parent_id=parent_id,
+        relationship_type=relationship_type
+    )
+
+    db.add(lineage)
+    db.commit()
+    db.refresh(lineage)
+
+    logger.info(f"Created lineage: {package_id} -> {parent_id} ({relationship_type})")
+    return lineage
+
+
 # ========== READ Operations ==========
 
 def get_package_by_id(db: Session, package_id: UUID) -> Optional[Package]:
@@ -60,6 +101,16 @@ def get_package_by_name_version(db: Session, name: str, version: str) -> Optiona
         Package.name == name,
         Package.version == version
     ).first()
+
+
+def get_package_by_name(db: Session, name: str) -> Optional[Package]:
+    """
+    Get the latest version of a package by name.
+    Returns the most recently uploaded package with the given name.
+    """
+    return db.query(Package).filter(
+        Package.name == name
+    ).order_by(Package.upload_date.desc()).first()
 
 
 def search_packages(

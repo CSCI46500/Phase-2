@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 # Set working directory
 WORKDIR /app
@@ -12,8 +12,14 @@ RUN npm install
 # Copy application code
 COPY . .
 
-# Expose Vite dev server port
+# Build the production bundle
+RUN npm run build
+
+# Install serve to host the production build
+RUN npm install -g serve
+
+# Expose port
 EXPOSE 5173
 
-# Start development server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Serve the built files
+CMD ["serve", "-s", "dist", "-l", "5173"]
