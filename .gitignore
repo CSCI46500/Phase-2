@@ -1,0 +1,13 @@
+# Ignore node modules
+node_modules/
+front-end/model-registry-frontend/node_modules/
+
+# Ignore old broken git folder
+.git_broken/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment files
+.env
