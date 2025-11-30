@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class LicenseType(Enum):
     """License categories by strength of protection."""
+
     PERMISSIVE = "permissive"
     WEAK_COPYLEFT = "weak_copyleft"
     STRONG_COPYLEFT = "strong_copyleft"
@@ -47,21 +48,18 @@ class LicenseCompatibility:
         "isc": LicenseType.PERMISSIVE,
         "unlicense": LicenseType.PERMISSIVE,
         "0bsd": LicenseType.PERMISSIVE,
-
         # Weakly protective (copyleft with linking exceptions)
         "lgpl": LicenseType.WEAK_COPYLEFT,
         "lgpl-2.1": LicenseType.WEAK_COPYLEFT,
         "lgpl-3.0": LicenseType.WEAK_COPYLEFT,
         "mpl": LicenseType.WEAK_COPYLEFT,
         "mpl-2.0": LicenseType.WEAK_COPYLEFT,
-
         # Strongly protective (strong copyleft)
         "gpl": LicenseType.STRONG_COPYLEFT,
         "gpl-2.0": LicenseType.STRONG_COPYLEFT,
         "gpl-3.0": LicenseType.STRONG_COPYLEFT,
         "agpl": LicenseType.STRONG_COPYLEFT,
         "agpl-3.0": LicenseType.STRONG_COPYLEFT,
-
         # Proprietary
         "proprietary": LicenseType.PROPRIETARY,
         "closed": LicenseType.PROPRIETARY,
@@ -120,7 +118,10 @@ class LicenseCompatibility:
         norm2 = self.normalize_license(license2)
 
         # Check both orderings
-        if (norm1, norm2) in self.INCOMPATIBLE_PAIRS or (norm2, norm1) in self.INCOMPATIBLE_PAIRS:
+        if (norm1, norm2) in self.INCOMPATIBLE_PAIRS or (
+            norm2,
+            norm1,
+        ) in self.INCOMPATIBLE_PAIRS:
             return True
 
         return False
@@ -156,7 +157,10 @@ class LicenseCompatibility:
         type2 = self.get_license_type(norm2)
 
         if type1 == LicenseType.UNKNOWN or type2 == LicenseType.UNKNOWN:
-            result = (False, f"Unknown license(s): {norm1 if type1 == LicenseType.UNKNOWN else norm2}")
+            result = (
+                False,
+                f"Unknown license(s): {norm1 if type1 == LicenseType.UNKNOWN else norm2}",
+            )
             self.compatibility_cache[cache_key] = result
             return result
 
@@ -178,11 +182,7 @@ class LicenseCompatibility:
         return result
 
     def _apply_compatibility_rules(
-        self,
-        license1: str,
-        type1: LicenseType,
-        license2: str,
-        type2: LicenseType
+        self, license1: str, type1: LicenseType, license2: str, type2: LicenseType
     ) -> Tuple[bool, str]:
         """Apply general license compatibility rules."""
 
@@ -191,39 +191,61 @@ class LicenseCompatibility:
             return (True, f"Both {license1} and {license2} are permissive licenses")
 
         if type1 == LicenseType.PERMISSIVE and type2 == LicenseType.WEAK_COPYLEFT:
-            return (True, f"{license1} (permissive) can be combined with {license2} (weak copyleft)")
+            return (
+                True,
+                f"{license1} (permissive) can be combined with {license2} (weak copyleft)",
+            )
 
         if type1 == LicenseType.WEAK_COPYLEFT and type2 == LicenseType.PERMISSIVE:
-            return (True, f"{license1} (weak copyleft) can be combined with {license2} (permissive)")
+            return (
+                True,
+                f"{license1} (weak copyleft) can be combined with {license2} (permissive)",
+            )
 
         if type1 == LicenseType.PERMISSIVE and type2 == LicenseType.STRONG_COPYLEFT:
-            return (True, f"{license1} (permissive) can be combined with {license2} (strong copyleft). Result must be {license2}")
+            return (
+                True,
+                f"{license1} (permissive) can be combined with {license2} (strong copyleft). Result must be {license2}",
+            )
 
         if type1 == LicenseType.STRONG_COPYLEFT and type2 == LicenseType.PERMISSIVE:
-            return (True, f"{license1} (strong copyleft) can be combined with {license2} (permissive). Result must be {license1}")
+            return (
+                True,
+                f"{license1} (strong copyleft) can be combined with {license2} (permissive). Result must be {license1}",
+            )
 
         # Weak copyleft licenses
         if type1 == LicenseType.WEAK_COPYLEFT and type2 == LicenseType.WEAK_COPYLEFT:
             return (True, f"Both {license1} and {license2} are weak copyleft licenses")
 
         if type1 == LicenseType.WEAK_COPYLEFT and type2 == LicenseType.STRONG_COPYLEFT:
-            return (True, f"{license1} (weak copyleft) can be combined with {license2} (strong copyleft). Result must be {license2}")
+            return (
+                True,
+                f"{license1} (weak copyleft) can be combined with {license2} (strong copyleft). Result must be {license2}",
+            )
 
         if type1 == LicenseType.STRONG_COPYLEFT and type2 == LicenseType.WEAK_COPYLEFT:
-            return (True, f"{license1} (strong copyleft) can be combined with {license2} (weak copyleft). Result must be {license1}")
+            return (
+                True,
+                f"{license1} (strong copyleft) can be combined with {license2} (weak copyleft). Result must be {license1}",
+            )
 
         # Strong copyleft licenses
-        if type1 == LicenseType.STRONG_COPYLEFT and type2 == LicenseType.STRONG_COPYLEFT:
+        if (
+            type1 == LicenseType.STRONG_COPYLEFT
+            and type2 == LicenseType.STRONG_COPYLEFT
+        ):
             # Different strong copyleft licenses are generally incompatible
-            return (False, f"{license1} and {license2} are both strong copyleft licenses and may be incompatible")
+            return (
+                False,
+                f"{license1} and {license2} are both strong copyleft licenses and may be incompatible",
+            )
 
         # Default case
         return (False, f"Compatibility between {license1} and {license2} is unclear")
 
     def check_project_compatibility(
-        self,
-        project_license: str,
-        dependency_licenses: List[str]
+        self, project_license: str, dependency_licenses: List[str]
     ) -> Dict[str, any]:
         """
         Check if a project's license is compatible with all its dependencies.
@@ -245,7 +267,7 @@ class LicenseCompatibility:
             "compatible": True,
             "project_license": self.normalize_license(project_license),
             "incompatible_dependencies": [],
-            "warnings": []
+            "warnings": [],
         }
 
         for dep_license in dependency_licenses:
@@ -253,10 +275,9 @@ class LicenseCompatibility:
 
             if not is_compatible:
                 result["compatible"] = False
-                result["incompatible_dependencies"].append({
-                    "license": self.normalize_license(dep_license),
-                    "reason": reason
-                })
+                result["incompatible_dependencies"].append(
+                    {"license": self.normalize_license(dep_license), "reason": reason}
+                )
             else:
                 # Check if there's a warning (e.g., result license must be stronger)
                 if "must be" in reason.lower():

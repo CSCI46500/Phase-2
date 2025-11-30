@@ -24,6 +24,7 @@ def create_package(
     license: Optional[str] = None,
     model_card: Optional[str] = None,
     size_bytes: Optional[int] = None,
+    size_breakdown: Optional[Dict[str, Any]] = None,
     is_sensitive: bool = False
 ) -> Package:
     """Create a new package entry."""
@@ -36,6 +37,7 @@ def create_package(
         license=license,
         model_card=model_card,
         size_bytes=size_bytes,
+        size_breakdown=size_breakdown,
         is_sensitive=is_sensitive
     )
 
@@ -118,13 +120,17 @@ def search_packages(
     name_query: Optional[str] = None,
     version: Optional[str] = None,
     regex: Optional[str] = None,
+    search_model_card: bool = False,
     offset: int = 0,
     limit: int = 50
 ) -> tuple[List[Package], int]:
     """
     Search packages with pagination.
+    Supports regex search on package names and optionally on model cards.
     Returns (packages, total_count).
     """
+    from sqlalchemy import or_
+
     query = db.query(Package)
 
     # Apply filters
@@ -135,15 +141,25 @@ def search_packages(
         query = query.filter(Package.version == version)
 
     if regex:
-        query = query.filter(Package.name.op('~')(regex))
+        # If search_model_card is True, search both name and model_card fields
+        if search_model_card:
+            query = query.filter(
+                or_(
+                    Package.name.op('~')(regex),
+                    Package.model_card.op('~')(regex)
+                )
+            )
+        else:
+            # Default: only search package name
+            query = query.filter(Package.name.op('~')(regex))
 
     # Get total count
     total = query.count()
 
-    # Apply pagination
+    # Apply pagination (max 100 per page for DoS protection)
     packages = query.offset(offset).limit(min(limit, 100)).all()
 
-    logger.debug(f"Search found {total} packages, returning {len(packages)}")
+    logger.debug(f"Search found {total} packages, returning {len(packages)} (model_card_search={search_model_card})")
     return packages, total
 
 

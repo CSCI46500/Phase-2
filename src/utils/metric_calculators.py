@@ -2,6 +2,7 @@
 Individual metric calculator classes.
 Each metric implements calculate() method returning (score, latency_ms).
 """
+
 import time
 import logging
 import os
@@ -13,10 +14,13 @@ logger = logging.getLogger(__name__)
 # Try to import Anthropic for Claude API integration
 try:
     from anthropic import Anthropic
+
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
-    logger.warning("Anthropic library not available. Install with: pip install anthropic")
+    logger.warning(
+        "Anthropic library not available. Install with: pip install anthropic"
+    )
 
 
 class LicenseMetric:
@@ -38,7 +42,7 @@ class LicenseMetric:
         "lgpl-3.0",
         "cc0",
         "unlicense",
-        "public domain"
+        "public domain",
     ]
 
     def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
@@ -47,7 +51,11 @@ class LicenseMetric:
 
         try:
             license_str = fetcher.get_license().lower()
-            score = 1.0 if any(lic in license_str for lic in self.ACCEPTED_LICENSES) else 0.0
+            score = (
+                1.0
+                if any(lic in license_str for lic in self.ACCEPTED_LICENSES)
+                else 0.0
+            )
             logger.debug(f"License score: {score} (license: {license_str})")
         except Exception as e:
             logger.warning(f"Error calculating license metric: {e}")
@@ -106,7 +114,7 @@ class RampUpTimeMetric:
         "quickstart",
         "quick start",
         "download",
-        "how to use"
+        "how to use",
     ]
 
     MIN_WORDS_THRESHOLD = 50
@@ -131,7 +139,7 @@ Respond with ONLY a number 0.0-1.0."""
             message = client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=10,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
 
             score = float(message.content[0].text.strip())
@@ -162,7 +170,8 @@ Respond with ONLY a number 0.0-1.0."""
                 section_content = after_text[:next_idx].split()
                 # Filter out common filler words
                 meaningful_words = [
-                    w for w in section_content
+                    w
+                    for w in section_content
                     if w not in ("more", "information", "see", "docs")
                 ]
                 score = min(len(meaningful_words) / self.MIN_WORDS_THRESHOLD, 1.0)
@@ -170,7 +179,11 @@ Respond with ONLY a number 0.0-1.0."""
             else:
                 section_scores.append(0.0)
 
-        return round(sum(section_scores) / len(section_scores), 2) if section_scores else 0.0
+        return (
+            round(sum(section_scores) / len(section_scores), 2)
+            if section_scores
+            else 0.0
+        )
 
     def calculate(self, fetcher: DataFetcher) -> Tuple[float, int]:
         """Calculate ramp-up time score based on documentation."""
@@ -242,7 +255,9 @@ class PerformanceClaimsMetric:
         try:
             readme_text = fetcher.fetch_readme("code").lower()
 
-            has_perf_keywords = any(kw in readme_text for kw in self.PERFORMANCE_KEYWORDS)
+            has_perf_keywords = any(
+                kw in readme_text for kw in self.PERFORMANCE_KEYWORDS
+            )
             score = 1.0 if has_perf_keywords else 0.0
 
             logger.debug(f"Performance claims score: {score}")
@@ -266,7 +281,9 @@ class DatasetCodeScoreMetric:
             has_dataset = fetcher.has_dataset_url()
 
             score = (float(has_code) + float(has_dataset)) / 2.0
-            logger.debug(f"Dataset/Code score: {score} (code={has_code}, dataset={has_dataset})")
+            logger.debug(
+                f"Dataset/Code score: {score} (code={has_code}, dataset={has_dataset})"
+            )
         except Exception as e:
             logger.warning(f"Error calculating dataset/code metric: {e}")
             score = 0.0
@@ -375,7 +392,13 @@ class ReproducibilityMetric:
             readme_lower = readme_text.lower()
 
             # Check if there's demo/example code in the model card
-            code_indicators = ["```python", "```py", "from transformers", "import torch", "pipeline("]
+            code_indicators = [
+                "```python",
+                "```py",
+                "from transformers",
+                "import torch",
+                "pipeline(",
+            ]
             has_code = any(indicator in readme_lower for indicator in code_indicators)
 
             if not has_code:
@@ -388,11 +411,15 @@ class ReproducibilityMetric:
 
                 if not code_blocks:
                     score = 0.0
-                    logger.debug("Reproducibility score: 0.0 (code indicators found but no extractable code)")
+                    logger.debug(
+                        "Reproducibility score: 0.0 (code indicators found but no extractable code)"
+                    )
                 else:
                     # Try to run the first substantial code block
                     score = self._test_code_execution(code_blocks[0])
-                    logger.debug(f"Reproducibility score: {score} (code execution tested)")
+                    logger.debug(
+                        f"Reproducibility score: {score} (code execution tested)"
+                    )
 
         except Exception as e:
             logger.warning(f"Error calculating reproducibility metric: {e}")
@@ -406,13 +433,12 @@ class ReproducibilityMetric:
         import re
 
         # Pattern to match ```python or ```py code blocks
-        pattern = r'```(?:python|py)\s*\n(.*?)```'
+        pattern = r"```(?:python|py)\s*\n(.*?)```"
         matches = re.findall(pattern, readme_text, re.DOTALL | re.IGNORECASE)
 
         # Filter out trivial examples (less than 2 lines)
         substantial_blocks = [
-            block.strip() for block in matches
-            if len(block.strip().split('\n')) >= 2
+            block.strip() for block in matches if len(block.strip().split("\n")) >= 2
         ]
 
         return substantial_blocks
@@ -432,17 +458,17 @@ class ReproducibilityMetric:
 
         try:
             # Create a temporary Python file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
                 f.write(code)
                 temp_file = f.name
 
             try:
                 # Try to run the code with a short timeout
                 result = subprocess.run(
-                    ['python3', temp_file],
+                    ["python3", temp_file],
                     capture_output=True,
                     text=True,
-                    timeout=5  # 5 second timeout
+                    timeout=5,  # 5 second timeout
                 )
 
                 if result.returncode == 0:
@@ -454,20 +480,24 @@ class ReproducibilityMetric:
 
                     # Common fixable issues
                     fixable_patterns = [
-                        'no module named',  # Missing imports
-                        'importerror',
-                        'modulenotfounderror',
-                        'name .* is not defined',  # Missing variable definitions
-                        'indentationerror',  # Formatting issues
+                        "no module named",  # Missing imports
+                        "importerror",
+                        "modulenotfounderror",
+                        "name .* is not defined",  # Missing variable definitions
+                        "indentationerror",  # Formatting issues
                     ]
 
-                    is_fixable = any(pattern in error_output for pattern in fixable_patterns)
+                    is_fixable = any(
+                        pattern in error_output for pattern in fixable_patterns
+                    )
 
                     if is_fixable:
                         logger.debug(f"Code has fixable errors: {result.stderr[:100]}")
                         return 0.5
                     else:
-                        logger.debug(f"Code has unfixable errors: {result.stderr[:100]}")
+                        logger.debug(
+                            f"Code has unfixable errors: {result.stderr[:100]}"
+                        )
                         return 0.0
 
             finally:
@@ -499,7 +529,7 @@ class ReviewednessMetric:
 
         try:
             import requests
-            
+
             # Check if there's a linked GitHub repository
             if not fetcher.has_code_url():
                 logger.debug("Reviewedness score: -1 (no GitHub repo)")
@@ -509,11 +539,15 @@ class ReviewednessMetric:
             owner, repo = fetcher.code_repo
 
             # Get total commits
-            commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=100"
+            commits_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=100"
+            )
             commits_response = requests.get(commits_url, timeout=10)
 
             if commits_response.status_code != 200:
-                logger.warning(f"Failed to fetch commits: {commits_response.status_code}")
+                logger.warning(
+                    f"Failed to fetch commits: {commits_response.status_code}"
+                )
                 return 0.0, int((time.time() - start_time) * 1000)
 
             commits = commits_response.json()
@@ -530,17 +564,23 @@ class ReviewednessMetric:
 
                 # Check for merge commit patterns
                 is_merge = (
-                    "merge pull request" in commit_message or
-                    "merge pr" in commit_message or
-                    (commit.get("parents", []) and len(commit.get("parents", [])) > 1)
+                    "merge pull request" in commit_message
+                    or "merge pr" in commit_message
+                    or (
+                        commit.get("parents", []) and len(commit.get("parents", [])) > 1
+                    )
                 )
 
                 if is_merge:
                     reviewed_commits += 1
 
             # Calculate fraction
-            score = round(reviewed_commits / total_commits, 2) if total_commits > 0 else 0.0
-            logger.debug(f"Reviewedness score: {score} ({reviewed_commits}/{total_commits} commits reviewed)")
+            score = (
+                round(reviewed_commits / total_commits, 2) if total_commits > 0 else 0.0
+            )
+            logger.debug(
+                f"Reviewedness score: {score} ({reviewed_commits}/{total_commits} commits reviewed)"
+            )
 
         except Exception as e:
             logger.warning(f"Error calculating reviewedness metric: {e}")
@@ -594,7 +634,7 @@ class TreescoreMetric:
             lineage = get_package_lineage(self.db_session, self.package_id)
 
             # Filter out the current package (depth 0) to get only parents
-            parent_entries = [entry for entry in lineage if entry.get('depth', 0) > 0]
+            parent_entries = [entry for entry in lineage if entry.get("depth", 0) > 0]
 
             if not parent_entries:
                 score = 0.0
@@ -605,10 +645,12 @@ class TreescoreMetric:
 
                 for parent_entry in parent_entries:
                     try:
-                        parent_id = UUID(parent_entry['id'])
-                        parent_pkg = self.db_session.query(Package).filter(
-                            Package.id == parent_id
-                        ).first()
+                        parent_id = UUID(parent_entry["id"])
+                        parent_pkg = (
+                            self.db_session.query(Package)
+                            .filter(Package.id == parent_id)
+                            .first()
+                        )
 
                         if parent_pkg and parent_pkg.net_score is not None:
                             parent_scores.append(parent_pkg.net_score)
@@ -617,7 +659,9 @@ class TreescoreMetric:
                                 f"score={parent_pkg.net_score}"
                             )
                     except Exception as e:
-                        logger.warning(f"Failed to get score for parent {parent_entry.get('id')}: {e}")
+                        logger.warning(
+                            f"Failed to get score for parent {parent_entry.get('id')}: {e}"
+                        )
                         continue
 
                 # Calculate average of parent scores

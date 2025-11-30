@@ -1,13 +1,16 @@
 """
 Validation utilities for package ingestion.
 """
+
 import logging
 from typing import Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
 
-def validate_metric_threshold(metrics_result: Dict[str, Any], threshold: float = 0.5) -> Tuple[bool, str]:
+def validate_metric_threshold(
+    metrics_result: Dict[str, Any], threshold: float = 0.5
+) -> Tuple[bool, str]:
     """
     Validate that all non-latency metrics meet the minimum threshold.
 
@@ -51,7 +54,9 @@ def validate_metric_threshold(metrics_result: Dict[str, Any], threshold: float =
         # Special case: reviewedness can be -1 when there's no GitHub repo
         # In this case, we skip it (don't count as failure)
         if metric_key == "reviewedness" and score == -1:
-            logger.debug("Reviewedness is -1 (no GitHub repo), skipping validation for this metric")
+            logger.debug(
+                "Reviewedness is -1 (no GitHub repo), skipping validation for this metric"
+            )
             continue
 
         if score is None:
@@ -83,7 +88,7 @@ def validate_package_name(name: str) -> Tuple[bool, str]:
     import re
 
     # Package name should be alphanumeric with hyphens, underscores, and slashes allowed
-    pattern = r'^[a-zA-Z0-9_\-\/\.]+$'
+    pattern = r"^[a-zA-Z0-9_\-\/\.]+$"
 
     if not name:
         return False, "Package name cannot be empty"
@@ -95,7 +100,10 @@ def validate_package_name(name: str) -> Tuple[bool, str]:
         return False, "Package name must be less than 255 characters"
 
     if not re.match(pattern, name):
-        return False, "Package name contains invalid characters. Only alphanumeric, hyphens, underscores, dots, and slashes are allowed"
+        return (
+            False,
+            "Package name contains invalid characters. Only alphanumeric, hyphens, underscores, dots, and slashes are allowed",
+        )
 
     return True, "Package name is valid"
 
@@ -113,18 +121,23 @@ def validate_version(version: str) -> Tuple[bool, str]:
     import re
 
     # Simple semantic versioning pattern
-    pattern = r'^\d+\.\d+\.\d+([a-zA-Z0-9\-\.]*)?$'
+    pattern = r"^\d+\.\d+\.\d+([a-zA-Z0-9\-\.]*)?$"
 
     if not version:
         return False, "Version cannot be empty"
 
     if not re.match(pattern, version):
-        return False, "Version must follow semantic versioning format (e.g., 1.0.0, 1.2.3-beta)"
+        return (
+            False,
+            "Version must follow semantic versioning format (e.g., 1.0.0, 1.2.3-beta)",
+        )
 
     return True, "Version is valid"
 
 
-def validate_huggingface_metrics(metrics_result: Dict[str, Any], threshold: float = 0.5) -> Tuple[bool, str]:
+def validate_huggingface_metrics(
+    metrics_result: Dict[str, Any], threshold: float = 0.5
+) -> Tuple[bool, str]:
     """
     Validate HuggingFace model metrics with relaxed requirements.
 
