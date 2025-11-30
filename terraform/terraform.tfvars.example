@@ -1,0 +1,36 @@
+# Terraform Variables Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+# AWS Configuration
+aws_region = "us-east-1"
+project_name = "model-registry"
+environment = "prod"
+
+# Network Configuration
+vpc_cidr = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# Database Configuration
+db_username = "admin"
+db_password = "CHANGE_ME_SecurePassword123!"  # IMPORTANT: Change this!
+db_name = "model_registry"
+
+# Backend Service Configuration
+backend_container_port = 8000
+backend_cpu = 512      # 0.5 vCPU
+backend_memory = 1024  # 1 GB
+
+# Autograder Configuration
+autograder_cpu = 1024  # 1 vCPU
+autograder_memory = 2048  # 2 GB
+
+# Protection
+enable_deletion_protection = true  # Set to false for dev/test environments
+
+# Tags
+tags = {
+  Project     = "ModelRegistry"
+  ManagedBy   = "Terraform"
+  Team        = "YourTeamName"
+  CostCenter  = "Engineering"
+}

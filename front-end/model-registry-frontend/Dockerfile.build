@@ -1,0 +1,20 @@
+# Dockerfile for building frontend static files (for S3/CloudFront deployment)
+FROM node:20-slim as builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code
+COPY . .
+
+# Build the production bundle
+RUN npm run build
+
+# Stage 2: Extract built files
+FROM scratch as export
+COPY --from=builder /app/dist /dist

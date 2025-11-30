@@ -1,0 +1,64 @@
+# Dockerfile for Package Autograder/Scorer
+# Designed for AWS Batch - runs untrusted code in isolation
+
+# Stage 1: Builder
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Runtime
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies for package analysis
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code (metrics calculators, utilities, etc.)
+COPY src/utils ./src/utils
+COPY src/core ./src/core
+COPY src/__init__.py ./src/
+
+# Copy autograder-specific scripts
+COPY scripts/autograder ./scripts/autograder
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV PATH=/root/.local/bin:$PATH
+
+# Security: Create non-root user with limited permissions
+RUN useradd -m -u 1000 -s /bin/bash autograder && \
+    chown -R autograder:autograder /app && \
+    # Limit resources (works with cgroups in Batch)
+    ulimit -Sv 2048000 || true
+
+# Switch to non-root user
+USER autograder
+
+# Resource limits (enforced by AWS Batch configuration)
+# - CPU: Defined in Terraform (var.autograder_cpu)
+# - Memory: Defined in Terraform (var.autograder_memory)
+# - Time: 15 minute timeout in Terraform
+# - Network: VPC egress controls
+
+# Default command (overridden by Batch job parameters)
+CMD ["python", "-m", "scripts.autograder.run"]

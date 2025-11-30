@@ -1,0 +1,232 @@
+name: AWS Deployment
+
+on:
+  push:
+    branches:
+      - aws-deployment
+      - main
+  pull_request:
+    branches:
+      - aws-deployment
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: model-registry
+  ENVIRONMENT: prod
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run backend tests
+        run: |
+          pytest tests/ --cov=src --cov-report=xml
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  build-and-push-backend:
+    name: Build and Push Backend to ECR
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/aws-deployment' || github.ref == 'refs/heads/main')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.backend -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  build-and-push-autograder:
+    name: Build and Push Autograder to ECR
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/aws-deployment' || github.ref == 'refs/heads/main')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push autograder image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-autograder
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f Dockerfile.autograder -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deploy-ecs:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: [build-and-push-backend]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/aws-deployment' || github.ref == 'refs/heads/main')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
+            --service ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend-service \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for ECS service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-cluster \
+            --services ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-backend-service \
+            --region ${{ env.AWS_REGION }}
+
+  deploy-frontend:
+    name: Deploy Frontend to S3/CloudFront
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/aws-deployment' || github.ref == 'refs/heads/main')
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: front-end/model-registry-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: front-end/model-registry-frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: front-end/model-registry-frontend
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get S3 bucket name
+        id: get-bucket
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "bucket=${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}-frontend-${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync front-end/model-registry-frontend/dist s3://${{ steps.get-bucket.outputs.bucket }} \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+
+          aws s3 cp front-end/model-registry-frontend/dist/index.html s3://${{ steps.get-bucket.outputs.bucket }}/index.html \
+            --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }} Frontend Distribution'].Id" \
+            --output text)
+
+          if [ -n "$DISTRIBUTION_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id $DISTRIBUTION_ID \
+              --paths "/*"
+          fi
+
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: [deploy-ecs, deploy-frontend]
+    if: always()
+
+    steps:
+      - name: Check deployment status
+        run: |
+          if [ "${{ needs.deploy-ecs.result }}" == "success" ] && [ "${{ needs.deploy-frontend.result }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+            exit 1
+          fi
