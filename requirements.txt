@@ -10,6 +10,7 @@ bcrypt
 boto3
 python-multipart
 python-dotenv
+slowapi  # Rate limiting for DoS protection
 
 # External APIs
 anthropic

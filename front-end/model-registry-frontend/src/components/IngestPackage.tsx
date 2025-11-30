@@ -205,19 +205,6 @@ const IngestPackage: React.FC = () => {
                 <span className="metric-value">{response.metrics.license.toFixed(2)}</span>
               </div>
             </div>
-
-            <div className="implementation-notes">
-              <h4><span aria-label="Implementation Status" role="img">🔧</span> Implementation Status:</h4>
-              <ul>
-                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Model successfully ingested and validated</li>
-                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Metrics calculated and stored</li>
-                <li className="implemented"><span aria-label="Completed" role="img">✓</span> Score validation (≥0.5 required)</li>
-                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Unique ID generation not yet implemented</li>
-                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Lineage graph parsing incomplete</li>
-                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Reproducibility metric (demo code execution)</li>
-                <li className="missing"><span aria-label="Not implemented" role="img">✗</span> Reviewedness metric (GitHub PR analysis)</li>
-              </ul>
-            </div>
           </div>
         </div>
       )}

@@ -2,21 +2,74 @@
 Database models for the Model Registry system.
 Based on the schema defined in CRUD_IMPLEMENTATION_PLAN.md
 """
-from sqlalchemy import Column, String, Float, Integer, Boolean, Text, DateTime, ForeignKey, BigInteger, TIMESTAMP, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, Float, Integer, Boolean, Text, DateTime, ForeignKey, BigInteger, TIMESTAMP, CheckConstraint, JSON
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB as PGJSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from sqlalchemy.types import TypeDecorator, CHAR
 import uuid
 
 Base = declarative_base()
+
+
+# UUID type that works with both PostgreSQL and SQLite
+class GUID(TypeDecorator):
+    """Platform-independent GUID type.
+    Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing as stringified hex values.
+    """
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PGUUID())
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return str(value) if isinstance(value, uuid.UUID) else value
+        else:
+            if isinstance(value, uuid.UUID):
+                return str(value)
+            return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(value)
+
+
+# JSONB type that falls back to JSON for non-PostgreSQL databases
+class JSONBType(TypeDecorator):
+    """Platform-independent JSONB type.
+    Uses PostgreSQL's JSONB type, otherwise falls back to JSON.
+    """
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PGJSONB())
+        else:
+            return dialect.type_descriptor(JSON())
+
+
+# Use GUID and JSONBType throughout the models
+UUID = GUID
+JSONB = JSONBType
 
 
 class User(Base):
     """User table for authentication and authorization."""
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     username = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     salt = Column(String(32), nullable=False)
@@ -35,8 +88,8 @@ class Token(Base):
     """API token table for tracking usage."""
     __tablename__ = "tokens"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token_hash = Column(String(255), nullable=False, index=True)
     api_calls_remaining = Column(Integer, default=1000)
     created_at = Column(TIMESTAMP, server_default=func.now())
@@ -50,15 +103,16 @@ class Package(Base):
     """Package table storing model/dataset metadata."""
     __tablename__ = "packages"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False, index=True)
     version = Column(String(50), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    uploader_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    uploader_id = Column(UUID(), ForeignKey("users.id"), nullable=True, index=True)
     s3_path = Column(String(500), nullable=False)  # s3://bucket/name/version/package.zip
     is_sensitive = Column(Boolean, default=False)
     js_policy_path = Column(String(500), nullable=True)
     size_bytes = Column(BigInteger, nullable=True)
+    size_breakdown = Column(JSONB, nullable=True)  # Detailed size analysis by component
     license = Column(String(100), nullable=True)
     model_card = Column(Text, nullable=True)  # Extracted from README
     upload_date = Column(TIMESTAMP, server_default=func.now())
@@ -72,16 +126,18 @@ class Package(Base):
     downloads = relationship("DownloadHistory", back_populates="package", cascade="all, delete-orphan")
     audit_logs = relationship("PackageConfusionAudit", back_populates="package", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        CheckConstraint('name ~ \'^[a-zA-Z0-9_-]+$\'', name='valid_package_name'),
-    )
+    # Note: CheckConstraint with regex is PostgreSQL-specific, disabled for SQLite compatibility
+    # Package name validation is handled at the application level in src/utils/validation.py
+    # __table_args__ = (
+    #     CheckConstraint('name ~ \'^[a-zA-Z0-9_-]+$\'', name='valid_package_name'),
+    # )
 
 
 class Metrics(Base):
     """Metrics table storing evaluation scores."""
     __tablename__ = "metrics"
 
-    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), primary_key=True)
+    package_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), primary_key=True)
     bus_factor = Column(Float, nullable=True)
     correctness = Column(Float, nullable=True)
     ramp_up = Column(Float, nullable=True)
@@ -110,9 +166,9 @@ class Lineage(Base):
     """Lineage table tracking package relationships."""
     __tablename__ = "lineage"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
-    parent_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    package_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
     relationship_type = Column(String(50), default="derived_from")  # 'derived_from', 'forked_from', etc.
 
     # Relationships
@@ -124,9 +180,9 @@ class Rating(Base):
     """Rating table for user ratings of packages."""
     __tablename__ = "ratings"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    package_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     score = Column(Integer, CheckConstraint('score >= 1 AND score <= 5'), nullable=False)
     timestamp = Column(TIMESTAMP, server_default=func.now())
 
@@ -139,9 +195,9 @@ class DownloadHistory(Base):
     """Download history tracking."""
     __tablename__ = "download_history"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    package_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     timestamp = Column(TIMESTAMP, server_default=func.now(), index=True)
     ip_address = Column(String(45), nullable=True)  # IPv6 support
     user_agent = Column(Text, nullable=True)
@@ -155,8 +211,8 @@ class PackageConfusionAudit(Base):
     """Audit log for package confusion detection."""
     __tablename__ = "package_confusion_audit"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    package_id = Column(UUID(as_uuid=True), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    package_id = Column(UUID(), ForeignKey("packages.id", ondelete="CASCADE"), nullable=False, index=True)
     suspicious_pattern = Column(String(255), nullable=True)
     detected_at = Column(TIMESTAMP, server_default=func.now())
     severity = Column(String(20), nullable=True, index=True)  # 'low', 'medium', 'high'
@@ -170,7 +226,7 @@ class SystemMetrics(Base):
     """System observability metrics for monitoring API health and performance."""
     __tablename__ = "system_metrics"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
     timestamp = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)
 
     # Request metrics

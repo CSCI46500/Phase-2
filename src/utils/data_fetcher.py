@@ -2,6 +2,7 @@
 Data fetcher module for retrieving and caching API responses.
 Handles HuggingFace and GitHub API interactions.
 """
+
 import requests
 import logging
 from typing import Optional, Dict, Any
@@ -41,10 +42,14 @@ class DataFetcher:
 
         if resource_type == "dataset":
             parts = url.split("huggingface.co/datasets/")
-            return parts[1].replace("/tree/main", "").strip("/") if len(parts) > 1 else ""
+            return (
+                parts[1].replace("/tree/main", "").strip("/") if len(parts) > 1 else ""
+            )
         else:
             parts = url.split("huggingface.co/")
-            return parts[1].replace("/tree/main", "").strip("/") if len(parts) > 1 else ""
+            return (
+                parts[1].replace("/tree/main", "").strip("/") if len(parts) > 1 else ""
+            )
 
     def _extract_github_repo(self, url: str) -> tuple[str, str]:
         """Extract GitHub owner and repo name from URL."""
@@ -103,7 +108,9 @@ class DataFetcher:
         if self.model_id:
             try:
                 # Download raw README file (not using HuggingFace API)
-                readme_url = f"https://huggingface.co/{self.model_id}/raw/main/README.md"
+                readme_url = (
+                    f"https://huggingface.co/{self.model_id}/raw/main/README.md"
+                )
                 response = requests.get(readme_url, timeout=10)
 
                 if response.status_code == 200:
@@ -126,13 +133,15 @@ class DataFetcher:
                         for i, line in enumerate(lines):
                             if "## license" in line or "# license" in line:
                                 # Get next few lines after license heading
-                                for j in range(i+1, min(i+5, len(lines))):
+                                for j in range(i + 1, min(i + 5, len(lines))):
                                     if lines[j].strip():
                                         license_name = lines[j].strip()
                                         break
                                 break
 
-                    logger.debug(f"Downloaded and parsed license from README: {license_name}")
+                    logger.debug(
+                        f"Downloaded and parsed license from README: {license_name}"
+                    )
                 else:
                     logger.debug(f"Could not download README for {self.model_id}")
             except Exception as e:
@@ -143,7 +152,9 @@ class DataFetcher:
             try:
                 owner, repo = self.code_repo
                 # Download LICENSE file directly (no API)
-                license_url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/LICENSE"
+                license_url = (
+                    f"https://raw.githubusercontent.com/{owner}/{repo}/main/LICENSE"
+                )
                 response = requests.get(license_url, timeout=10)
 
                 if response.status_code == 200:
@@ -187,7 +198,9 @@ class DataFetcher:
                 if filename.endswith(file_extensions):
                     file_url = f"{self.model_url}/resolve/main/{filename}"
                     try:
-                        response = requests.head(file_url, timeout=15, allow_redirects=True)
+                        response = requests.head(
+                            file_url, timeout=15, allow_redirects=True
+                        )
                         size = int(response.headers.get("Content-Length", 0) or 0)
                         total_bytes += size
                     except Exception as e:
@@ -228,7 +241,9 @@ class DataFetcher:
 
             elif resource_type == "code" and self.code_repo[0]:
                 owner, repo = self.code_repo
-                readme_url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/README.md"
+                readme_url = (
+                    f"https://raw.githubusercontent.com/{owner}/{repo}/main/README.md"
+                )
                 response = requests.get(readme_url, timeout=10)
                 if response.status_code == 200:
                     readme_text = response.text
@@ -266,7 +281,7 @@ class DataFetcher:
                 data = response.json()
                 result = {
                     "stars": data.get("stargazers_count", 0),
-                    "forks": data.get("forks_count", 0)
+                    "forks": data.get("forks_count", 0),
                 }
                 self._cache_set(cache_key, result)
                 logger.debug(f"Fetched GitHub stats for {owner}/{repo}")
@@ -291,7 +306,9 @@ class DataFetcher:
 
         try:
             owner, repo = self.code_repo
-            api_url = f"https://api.github.com/repos/{owner}/{repo}/contributors?per_page=100"
+            api_url = (
+                f"https://api.github.com/repos/{owner}/{repo}/contributors?per_page=100"
+            )
             response = requests.get(api_url, timeout=10)
 
             if response.status_code == 200:
@@ -301,7 +318,9 @@ class DataFetcher:
                 logger.debug(f"Fetched {count} contributors for {owner}/{repo}")
                 return count
             else:
-                logger.warning(f"GitHub contributors API returned status {response.status_code}")
+                logger.warning(
+                    f"GitHub contributors API returned status {response.status_code}"
+                )
 
         except Exception as e:
             logger.warning(f"Error fetching contributors: {e}")
@@ -346,15 +365,21 @@ class DataFetcher:
 
             elif resource_type == "github" and self.code_repo[0]:
                 owner, repo = self.code_repo
-                api_url = f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=1"
+                api_url = (
+                    f"https://api.github.com/repos/{owner}/{repo}/commits?per_page=1"
+                )
                 response = requests.get(api_url, timeout=10)
 
                 if response.status_code == 200:
                     commits = response.json()
                     if commits:
                         commit_date_str = commits[0]["commit"]["committer"]["date"]
-                        commit_date = datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
-                        result = datetime.now(commit_date.tzinfo) - commit_date < timedelta(days=days)
+                        commit_date = datetime.fromisoformat(
+                            commit_date_str.replace("Z", "+00:00")
+                        )
+                        result = datetime.now(
+                            commit_date.tzinfo
+                        ) - commit_date < timedelta(days=days)
                         logger.debug(f"GitHub repo last modified check: {result}")
 
         except Exception as e:

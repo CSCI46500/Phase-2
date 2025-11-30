@@ -139,6 +139,53 @@ class S3Helper:
             logger.error(f"Failed to delete from S3: {e}")
             return False
 
+    def delete_all_objects(self) -> int:
+        """
+        Delete all objects in the bucket with pagination.
+        Used for system reset functionality.
+
+        Returns:
+            Number of objects deleted
+        """
+        deleted_count = 0
+
+        try:
+            # Use pagination to handle large number of objects
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=self.bucket_name)
+
+            for page in pages:
+                if 'Contents' not in page:
+                    continue
+
+                # Build list of objects to delete (max 1000 per batch)
+                objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+
+                if objects_to_delete:
+                    # Delete batch of objects
+                    response = self.s3_client.delete_objects(
+                        Bucket=self.bucket_name,
+                        Delete={'Objects': objects_to_delete}
+                    )
+
+                    # Count successful deletions
+                    if 'Deleted' in response:
+                        batch_count = len(response['Deleted'])
+                        deleted_count += batch_count
+                        logger.info(f"Deleted batch of {batch_count} objects from S3")
+
+                    # Log any errors
+                    if 'Errors' in response:
+                        for error in response['Errors']:
+                            logger.error(f"Error deleting {error['Key']}: {error['Message']}")
+
+            logger.info(f"Total S3 objects deleted: {deleted_count}")
+            return deleted_count
+
+        except ClientError as e:
+            logger.error(f"Failed to delete all objects: {e}")
+            return deleted_count
+
     def file_exists(self, s3_key: str) -> bool:
         """
         Check if file exists in S3.

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # SQL Echo (for debugging SQL queries)
     sql_echo: bool = False
 
+    # Rate Limiting (DoS protection)
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 100  # Max requests per minute per IP
+    rate_limit_search_per_minute: int = 30  # Lower limit for expensive search operations
+
     @property
     def is_local(self) -> bool:
         """Check if running in local environment."""

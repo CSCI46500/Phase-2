@@ -15,6 +15,9 @@ import shutil
 import logging
 import time
 from datetime import datetime, timedelta
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from src.core.database import get_db, init_db
 from src.core.models import User, Package
@@ -29,6 +32,7 @@ from src.core.auth import (
     check_permission
 )
 import src.crud as crud
+from src.crud.package import create_lineage
 from src.services.s3_service import s3_helper
 from src.services.metrics_service import MetricsEvaluator
 from src.services.monitoring import metrics_collector, collect_and_persist_metrics, get_recent_metrics
@@ -37,10 +41,16 @@ from src.utils.logger import setup_logging
 from src.utils.license_compatibility import license_checker
 from src.utils.data_fetcher import DataFetcher
 from src.utils.validation import validate_metric_threshold, validate_package_name, validate_huggingface_metrics
+from src.utils.lineage_parser import lineage_parser
+from src.utils.size_analyzer import size_analyzer
+from src.utils.github_license_fetcher import github_license_fetcher
 
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Create FastAPI app
 app = FastAPI(
@@ -48,6 +58,10 @@ app = FastAPI(
     version=settings.api_version,
     description="Model Registry API with CRUD operations for ML models"
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS
 app.add_middleware(
@@ -126,6 +140,7 @@ class PackageQuery(BaseModel):
     name: Optional[str] = None
     version: Optional[str] = None
     regex: Optional[str] = None
+    search_model_card: bool = False  # If True, regex applies to model_card field as well
 
 
 class RatingRequest(BaseModel):
@@ -310,7 +325,9 @@ async def register_user(
 # ========== CREATE Operations ==========
 
 @app.post("/package")
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def upload_package(
+    request: Request,
     file: UploadFile = File(...),
     name: str = Form(...),
     version: str = Form(...),
@@ -322,7 +339,7 @@ async def upload_package(
     db: Session = Depends(get_db)
 ):
     """
-    Upload and evaluate a package.
+    Upload and evaluate a package with rate limiting.
     As per CRUD plan: POST /package
 
     This endpoint:
@@ -354,6 +371,10 @@ async def upload_package(
         s3_path = s3_helper.build_full_s3_url(s3_key)
         size_bytes = os.path.getsize(temp_file_path)
 
+        # Analyze package size breakdown
+        logger.info(f"Analyzing package size for {name} v{version}")
+        size_analysis = size_analyzer.analyze_zip(temp_file_path)
+
         # Create package entry first (so we have package_id for TreeScore)
         package = crud.create_package(
             db=db,
@@ -363,8 +384,32 @@ async def upload_package(
             s3_path=s3_path,
             description=description,
             license="",  # Will be updated after metrics evaluation
-            size_bytes=size_bytes
+            size_bytes=size_bytes,
+            size_breakdown=size_analysis
         )
+
+        # Parse lineage information from the package
+        logger.info(f"Parsing lineage from package {name} v{version}")
+        lineage_info = lineage_parser.parse_zip_file(temp_file_path)
+
+        # Create lineage relationships for detected parent models
+        if lineage_info["parent_models"]:
+            for parent_identifier in lineage_info["parent_models"]:
+                # Try to find parent package in the registry by name
+                # Extract just the model name (e.g., "bert-base-uncased" from "google/bert-base-uncased")
+                parent_name = parent_identifier.split('/')[-1] if '/' in parent_identifier else parent_identifier
+                parent_package = crud.package.get_package_by_name(db, parent_name)
+
+                if parent_package:
+                    create_lineage(
+                        db=db,
+                        package_id=package.id,
+                        parent_id=parent_package.id,
+                        relationship_type=lineage_info["relationship_type"]
+                    )
+                    logger.info(f"Created lineage: {package.id} -> {parent_package.id} (parent: {parent_name})")
+                else:
+                    logger.debug(f"Parent model '{parent_identifier}' not found in registry")
 
         # Run metrics evaluation with package context for TreeScore
         evaluator = MetricsEvaluator(
@@ -395,6 +440,27 @@ async def upload_package(
         db.commit()
         db.refresh(package)
 
+        # Validate license compatibility if GitHub URLs are provided
+        license_warnings = []
+        if package.license and (model_url or code_url or dataset_url):
+            logger.info(f"Checking license compatibility for {name} v{version}")
+
+            # Check each GitHub URL for license compatibility
+            for url_type, url in [("model", model_url), ("code", code_url), ("dataset", dataset_url)]:
+                if url and "github.com" in url.lower():
+                    compat_result = github_license_fetcher.check_compatibility_with_github(
+                        package.license,
+                        url
+                    )
+
+                    if compat_result["compatible"] is False:
+                        warning_msg = (
+                            f"License incompatibility detected with {url_type} repository: "
+                            f"{compat_result['reason']}"
+                        )
+                        license_warnings.append(warning_msg)
+                        logger.warning(f"Package {name} v{version}: {warning_msg}")
+
         # Create metrics entry
         metrics_data = {
             "bus_factor": eval_result.get("bus_factor"),
@@ -415,7 +481,7 @@ async def upload_package(
 
         logger.info(f"Package uploaded successfully: {package.id}")
 
-        return {
+        response = {
             "package_id": str(package.id),
             "name": name,
             "version": version,
@@ -424,6 +490,12 @@ async def upload_package(
             "message": "Package uploaded and evaluated successfully"
         }
 
+        # Add license warnings if any
+        if license_warnings:
+            response["license_warnings"] = license_warnings
+
+        return response
+
     finally:
         # Cleanup temp file
         if os.path.exists(temp_file_path):
@@ -431,13 +503,15 @@ async def upload_package(
 
 
 @app.post("/package/ingest-huggingface")
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def ingest_huggingface_model(
-    request: Dict[str, Any],
+    request: Request,
+    body: Dict[str, Any],
     user: User = Depends(require_permission("upload")),
     db: Session = Depends(get_db)
 ):
     """
-    Ingest a HuggingFace model by downloading it and storing in the registry.
+    Ingest a HuggingFace model with rate limiting by downloading it and storing in the registry.
 
     This endpoint:
     1. Downloads the full model package from HuggingFace
@@ -457,13 +531,13 @@ async def ingest_huggingface_model(
     """
     from src.services.huggingface_service import hf_service
 
-    # Parse request
-    model_id = request.get("model_id")
+    # Parse request body
+    model_id = body.get("model_id")
     if not model_id:
         raise HTTPException(status_code=400, detail="model_id is required")
 
-    version_override = request.get("version")
-    description = request.get("description")
+    version_override = body.get("version")
+    description = body.get("description")
 
     logger.info(f"Ingesting HuggingFace model: {model_id} by user {user.username}")
 
@@ -811,7 +885,9 @@ async def get_package(
 
 
 @app.post("/packages")
+@limiter.limit(f"{settings.rate_limit_search_per_minute}/minute")
 async def search_packages(
+    request: Request,
     query: PackageQuery,
     offset: int = 0,
     limit: int = 50,
@@ -819,14 +895,16 @@ async def search_packages(
     db: Session = Depends(get_db)
 ):
     """
-    Search/enumerate packages.
+    Search/enumerate packages with rate limiting.
     As per CRUD plan: POST /packages
+    Rate limited to prevent DoS attacks on expensive search operations.
     """
     packages, total = crud.search_packages(
         db=db,
         name_query=query.name,
         version=query.version,
         regex=query.regex,
+        search_model_card=query.search_model_card,
         offset=offset,
         limit=limit
     )
@@ -927,6 +1005,39 @@ async def get_package_lineage(
     return {
         "package_id": str(package_id),
         "lineage": lineage
+    }
+
+
+@app.get("/package/{package_id}/size")
+async def get_package_size_info(
+    package_id: UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed size information and download options for a package.
+    Returns size breakdown by component and estimated download sizes for different options.
+    """
+    package = crud.get_package_by_id(db, package_id)
+    if not package:
+        raise HTTPException(status_code=404, detail="Package not found")
+
+    # Get size breakdown from stored data
+    size_breakdown = package.size_breakdown or {}
+
+    # Generate download options
+    download_options = []
+    if size_breakdown:
+        download_options = size_analyzer.get_download_options(size_breakdown)
+
+    return {
+        "package_id": str(package_id),
+        "package_name": package.name,
+        "package_version": package.version,
+        "total_size_bytes": package.size_bytes,
+        "total_size_mb": round(package.size_bytes / (1024 * 1024), 2) if package.size_bytes else 0,
+        "size_breakdown": size_breakdown,
+        "download_options": download_options
     }
 
 
@@ -1156,20 +1267,29 @@ async def reset_system(
     Reset system (admin only).
     As per CRUD plan: DELETE /reset
     Deletes all packages and users except default admin.
+    Uses pagination to handle large numbers of S3 objects.
     """
-    # Delete all S3 objects
+    logger.warning(f"System reset initiated by admin user: {admin.username}")
+
+    # Delete all S3 objects with pagination
+    s3_deleted_count = 0
     try:
-        # Note: This is a simplified version. In production, you'd want to paginate through objects
-        logger.warning("Deleting all S3 objects...")
-        # Implementation depends on AWS SDK pagination
+        logger.warning("Deleting all S3 objects with pagination...")
+        s3_deleted_count = s3_helper.delete_all_objects()
+        logger.info(f"Successfully deleted {s3_deleted_count} objects from S3")
     except Exception as e:
         logger.error(f"Failed to delete S3 objects: {e}")
+        # Continue with database reset even if S3 cleanup fails
 
     # Reset database
     crud.reset_system(db, keep_admin=True)
 
+    logger.warning("System reset completed")
+
     return {
-        "message": "System reset to default state"
+        "message": "System reset to default state",
+        "s3_objects_deleted": s3_deleted_count,
+        "database_reset": True
     }
 
 
