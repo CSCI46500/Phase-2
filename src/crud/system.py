@@ -18,8 +18,8 @@ def reset_system(db: Session, keep_admin: bool = True) -> None:
     logger.warning("Resetting system...")
 
     if keep_admin:
-        # Delete all users except admin
-        admin_username = "admin"  # From config
+        # Delete all users except the default admin (required by autograder spec)
+        admin_username = "ece30861defaultadminuser"
         db.query(User).filter(User.username != admin_username).delete()
     else:
         db.query(User).delete()
