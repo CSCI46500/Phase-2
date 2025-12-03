@@ -208,6 +208,39 @@ async def shutdown_event():
 
 # ========== Health Check ==========
 
+@app.get("/tracks")
+async def get_tracks():
+    """
+    Return the Phase 2 tracks that this implementation supports.
+
+    Per Phase 2 spec, teams must implement at least one of:
+    - Security track (access control, sensitive models, package confusion detection)
+    - Performance track (measurements, component experiments)
+    - High-assurance track (90%+ coverage, disaster proofing, atomic updates)
+
+    This endpoint informs the autograder which tracks are implemented.
+    """
+    return {
+        "planned_tracks": ["Security"],
+        "details": {
+            "security": {
+                "access_control": True,
+                "sensitive_models": False,
+                "package_confusion": False
+            },
+            "performance": {
+                "measurements": False,
+                "component_experiments": False
+            },
+            "high_assurance": {
+                "high_coverage": False,
+                "disaster_proofing": False,
+                "atomic_updates": False
+            }
+        }
+    }
+
+
 @app.get("/health")
 async def health_check(detailed: bool = False, db: Session = Depends(get_db)):
     """
