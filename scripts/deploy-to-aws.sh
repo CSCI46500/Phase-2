@@ -393,31 +393,58 @@ create_load_balancer() {
         log_info "Created ALB security group"
     fi
 
-    # Create ECS security group
-    if aws ec2 describe-security-groups --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-sg" 2>/dev/null | grep -q "GroupId"; then
-        log_warn "ECS security group already exists"
-        export ECS_SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-sg" \
+    # Create ECS security group for backend
+    if aws ec2 describe-security-groups --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-backend-sg" 2>/dev/null | grep -q "GroupId"; then
+        log_warn "ECS backend security group already exists"
+        export ECS_BACKEND_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-backend-sg" \
             --query 'SecurityGroups[0].GroupId' \
             --output text)
     else
         aws ec2 create-security-group \
-            --group-name ${PROJECT_NAME}-ecs-sg \
-            --description "Security group for ECS tasks" \
+            --group-name ${PROJECT_NAME}-ecs-backend-sg \
+            --description "Security group for ECS backend tasks" \
             --vpc-id ${VPC_ID}
 
-        export ECS_SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-sg" \
+        export ECS_BACKEND_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-backend-sg" \
             --query 'SecurityGroups[0].GroupId' \
             --output text)
 
         aws ec2 authorize-security-group-ingress \
-            --group-id ${ECS_SG_ID} \
+            --group-id ${ECS_BACKEND_SG_ID} \
             --protocol tcp \
             --port 8000 \
             --source-group ${ALB_SG_ID}
 
-        log_info "Created ECS security group"
+        log_info "Created ECS backend security group"
+    fi
+
+    # Create ECS security group for frontend
+    if aws ec2 describe-security-groups --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-frontend-sg" 2>/dev/null | grep -q "GroupId"; then
+        log_warn "ECS frontend security group already exists"
+        export ECS_FRONTEND_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-frontend-sg" \
+            --query 'SecurityGroups[0].GroupId' \
+            --output text)
+    else
+        aws ec2 create-security-group \
+            --group-name ${PROJECT_NAME}-ecs-frontend-sg \
+            --description "Security group for ECS frontend tasks" \
+            --vpc-id ${VPC_ID}
+
+        export ECS_FRONTEND_SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT_NAME}-ecs-frontend-sg" \
+            --query 'SecurityGroups[0].GroupId' \
+            --output text)
+
+        aws ec2 authorize-security-group-ingress \
+            --group-id ${ECS_FRONTEND_SG_ID} \
+            --protocol tcp \
+            --port 80 \
+            --source-group ${ALB_SG_ID}
+
+        log_info "Created ECS frontend security group"
     fi
 
     # Create load balancer
@@ -452,10 +479,10 @@ create_load_balancer() {
         log_info "Created load balancer: $ALB_DNS"
     fi
 
-    # Create target group
+    # Create backend target group
     if aws elbv2 describe-target-groups --names ${PROJECT_NAME}-backend-tg 2>/dev/null | grep -q "TargetGroupArn"; then
-        log_warn "Target group already exists"
-        export TG_ARN=$(aws elbv2 describe-target-groups \
+        log_warn "Backend target group already exists"
+        export BACKEND_TG_ARN=$(aws elbv2 describe-target-groups \
             --names ${PROJECT_NAME}-backend-tg \
             --query 'TargetGroups[0].TargetGroupArn' \
             --output text)
@@ -469,43 +496,107 @@ create_load_balancer() {
             --health-check-path /health \
             --health-check-interval-seconds 30
 
-        export TG_ARN=$(aws elbv2 describe-target-groups \
+        export BACKEND_TG_ARN=$(aws elbv2 describe-target-groups \
             --names ${PROJECT_NAME}-backend-tg \
             --query 'TargetGroups[0].TargetGroupArn' \
             --output text)
 
-        log_info "Created target group"
+        log_info "Created backend target group"
     fi
 
-    # Create listener
-    if aws elbv2 describe-listeners --load-balancer-arn ${ALB_ARN} 2>/dev/null | grep -q "ListenerArn"; then
+    # Create frontend target group
+    if aws elbv2 describe-target-groups --names ${PROJECT_NAME}-frontend-tg 2>/dev/null | grep -q "TargetGroupArn"; then
+        log_warn "Frontend target group already exists"
+        export FRONTEND_TG_ARN=$(aws elbv2 describe-target-groups \
+            --names ${PROJECT_NAME}-frontend-tg \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+    else
+        aws elbv2 create-target-group \
+            --name ${PROJECT_NAME}-frontend-tg \
+            --protocol HTTP \
+            --port 80 \
+            --vpc-id ${VPC_ID} \
+            --target-type ip \
+            --health-check-path / \
+            --health-check-interval-seconds 30 \
+            --matcher HttpCode=200,404
+
+        export FRONTEND_TG_ARN=$(aws elbv2 describe-target-groups \
+            --names ${PROJECT_NAME}-frontend-tg \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+
+        log_info "Created frontend target group"
+    fi
+
+    # Get or create listener
+    export LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn ${ALB_ARN} --query 'Listeners[0].ListenerArn' --output text 2>/dev/null)
+
+    if [ "$LISTENER_ARN" != "None" ] && [ -n "$LISTENER_ARN" ]; then
         log_warn "Listener already exists"
     else
+        # Create listener with frontend as default action
         aws elbv2 create-listener \
             --load-balancer-arn ${ALB_ARN} \
             --protocol HTTP \
             --port 80 \
-            --default-actions Type=forward,TargetGroupArn=${TG_ARN}
+            --default-actions Type=forward,TargetGroupArn=${FRONTEND_TG_ARN}
 
+        export LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn ${ALB_ARN} --query 'Listeners[0].ListenerArn' --output text)
         log_info "Created listener"
+    fi
+
+    # Create or update listener rules for API routing
+    # Get existing rules to check priorities
+    EXISTING_RULES=$(aws elbv2 describe-rules --listener-arn ${LISTENER_ARN} --query 'Rules[?Priority!=`default`].Priority' --output text 2>/dev/null || echo "")
+
+    # Rule 1: Forward /api/* to backend
+    if echo "$EXISTING_RULES" | grep -qw "1"; then
+        log_warn "API routing rule priority 1 already exists, skipping"
+    else
+        aws elbv2 create-rule \
+            --listener-arn ${LISTENER_ARN} \
+            --priority 1 \
+            --conditions Field=path-pattern,Values='/api/*' \
+            --actions Type=forward,TargetGroupArn=${BACKEND_TG_ARN} 2>/dev/null || log_warn "Rule 1 creation failed (may already exist)"
+        log_info "Created /api/* routing rule"
+    fi
+
+    # Rule 2: Forward /authenticate, /tracks, /health, /packages, /package, /reset, /logs, /user to backend
+    if echo "$EXISTING_RULES" | grep -qw "2"; then
+        log_warn "Root API routing rule priority 2 already exists, skipping"
+    else
+        aws elbv2 create-rule \
+            --listener-arn ${LISTENER_ARN} \
+            --priority 2 \
+            --conditions Field=path-pattern,Values='/authenticate,/tracks,/health,/packages,/package/*,/reset,/logs,/user/*,/docs,/openapi.json' \
+            --actions Type=forward,TargetGroupArn=${BACKEND_TG_ARN} 2>/dev/null || log_warn "Rule 2 creation failed (may already exist)"
+        log_info "Created root API routing rule"
     fi
 }
 
 deploy_ecs_service() {
-    log_info "Deploying ECS service..."
+    log_info "Deploying ECS services..."
 
-    # Create CloudWatch log group
+    # ==== BACKEND SERVICE ====
+    log_info "Deploying backend service..."
+
+    # Create CloudWatch log group for backend
     if aws logs describe-log-groups --log-group-name-prefix "/ecs/${PROJECT_NAME}-backend" 2>/dev/null | grep -q "logGroupName"; then
-        log_warn "CloudWatch log group already exists"
+        log_warn "Backend CloudWatch log group already exists"
     else
         aws logs create-log-group --log-group-name /ecs/${PROJECT_NAME}-backend
         aws logs put-retention-policy \
             --log-group-name /ecs/${PROJECT_NAME}-backend \
             --retention-in-days 7
-        log_info "Created CloudWatch log group"
+        log_info "Created backend CloudWatch log group"
     fi
 
-    # Register task definition
+    # Register backend task definition
+    # Use jq to properly escape the admin password for JSON
+    ESCAPED_ADMIN_PASSWORD=$(echo -n "$ADMIN_PASSWORD" | jq -R .)
+
     cat > /tmp/backend-task-def.json <<EOF
 {
   "family": "${PROJECT_NAME}-backend",
@@ -529,7 +620,7 @@ deploy_ecs_service() {
         {"name": "ENVIRONMENT", "value": "aws"},
         {"name": "LOG_LEVEL", "value": "1"},
         {"name": "ADMIN_USERNAME", "value": "${ADMIN_USERNAME}"},
-        {"name": "ADMIN_PASSWORD", "value": "${ADMIN_PASSWORD}"},
+        {"name": "ADMIN_PASSWORD", "value": ${ESCAPED_ADMIN_PASSWORD}},
         {"name": "SECRET_KEY", "value": "${SECRET_KEY}"}
       ],
       "logConfiguration": {
@@ -546,34 +637,97 @@ deploy_ecs_service() {
 EOF
 
     aws ecs register-task-definition --cli-input-json file:///tmp/backend-task-def.json
-    log_info "Registered task definition"
+    log_info "Registered backend task definition"
 
-    # Create or update service
-    if aws ecs describe-services --cluster ${ECS_CLUSTER_NAME} --services ${ECS_BACKEND_SERVICE} 2>/dev/null | grep -q "serviceName"; then
-        log_info "Updating existing ECS service..."
+    # Create or update backend service
+    SUBNET_ARRAY=$(echo ${SUBNET_IDS} | jq -R 'split(" ")')
+
+    if aws ecs describe-services --cluster ${ECS_CLUSTER_NAME} --services ${ECS_BACKEND_SERVICE} 2>/dev/null | grep -q "ACTIVE"; then
+        log_info "Updating existing backend ECS service..."
         aws ecs update-service \
             --cluster ${ECS_CLUSTER_NAME} \
             --service ${ECS_BACKEND_SERVICE} \
             --force-new-deployment
     else
-        log_info "Creating ECS service..."
-
-        # Get subnets as JSON array
-        SUBNET_ARRAY=$(echo ${SUBNET_IDS} | jq -R 'split(" ")')
-
+        log_info "Creating backend ECS service..."
         aws ecs create-service \
             --cluster ${ECS_CLUSTER_NAME} \
             --service-name ${ECS_BACKEND_SERVICE} \
             --task-definition ${PROJECT_NAME}-backend \
             --desired-count 1 \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=${SUBNET_ARRAY},securityGroups=[\"${ECS_SG_ID}\"],assignPublicIp=ENABLED}" \
-            --load-balancers "targetGroupArn=${TG_ARN},containerName=backend,containerPort=8000" \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNET_ARRAY},securityGroups=[\"${ECS_BACKEND_SG_ID}\"],assignPublicIp=ENABLED}" \
+            --load-balancers "targetGroupArn=${BACKEND_TG_ARN},containerName=backend,containerPort=8000" \
             --health-check-grace-period-seconds 60
     fi
 
-    log_info "Waiting for service to stabilize..."
-    aws ecs wait services-stable --cluster ${ECS_CLUSTER_NAME} --services ${ECS_BACKEND_SERVICE}
+    # ==== FRONTEND SERVICE ====
+    log_info "Deploying frontend service..."
+
+    # Create CloudWatch log group for frontend
+    if aws logs describe-log-groups --log-group-name-prefix "/ecs/${PROJECT_NAME}-frontend" 2>/dev/null | grep -q "logGroupName"; then
+        log_warn "Frontend CloudWatch log group already exists"
+    else
+        aws logs create-log-group --log-group-name /ecs/${PROJECT_NAME}-frontend
+        aws logs put-retention-policy \
+            --log-group-name /ecs/${PROJECT_NAME}-frontend \
+            --retention-in-days 7
+        log_info "Created frontend CloudWatch log group"
+    fi
+
+    # Register frontend task definition
+    cat > /tmp/frontend-task-def.json <<EOF
+{
+  "family": "${PROJECT_NAME}-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "${FRONTEND_REPO_URI}:latest",
+      "portMappings": [{"containerPort": 80, "protocol": "tcp"}],
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/${PROJECT_NAME}-frontend",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+    aws ecs register-task-definition --cli-input-json file:///tmp/frontend-task-def.json
+    log_info "Registered frontend task definition"
+
+    # Create or update frontend service
+    if aws ecs describe-services --cluster ${ECS_CLUSTER_NAME} --services ${ECS_FRONTEND_SERVICE} 2>/dev/null | grep -q "ACTIVE"; then
+        log_info "Updating existing frontend ECS service..."
+        aws ecs update-service \
+            --cluster ${ECS_CLUSTER_NAME} \
+            --service ${ECS_FRONTEND_SERVICE} \
+            --force-new-deployment
+    else
+        log_info "Creating frontend ECS service..."
+        aws ecs create-service \
+            --cluster ${ECS_CLUSTER_NAME} \
+            --service-name ${ECS_FRONTEND_SERVICE} \
+            --task-definition ${PROJECT_NAME}-frontend \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNET_ARRAY},securityGroups=[\"${ECS_FRONTEND_SG_ID}\"],assignPublicIp=ENABLED}" \
+            --load-balancers "targetGroupArn=${FRONTEND_TG_ARN},containerName=frontend,containerPort=80" \
+            --health-check-grace-period-seconds 60
+    fi
+
+    log_info "Waiting for services to stabilize..."
+    aws ecs wait services-stable --cluster ${ECS_CLUSTER_NAME} --services ${ECS_BACKEND_SERVICE} ${ECS_FRONTEND_SERVICE}
 
     log_info "Deployment complete!"
 }
@@ -584,20 +738,26 @@ print_summary() {
     echo "  AWS Deployment Summary"
     echo "=========================================="
     echo ""
+    echo "Application URL: http://${ALB_DNS}"
     echo "API Endpoint: http://${ALB_DNS}"
     echo "API Docs: http://${ALB_DNS}/docs"
     echo "Health Check: http://${ALB_DNS}/health"
+    echo "Tracks Endpoint: http://${ALB_DNS}/tracks"
     echo ""
     echo "AWS Resources Created:"
     echo "  - ECR Repositories: ${ECR_BACKEND_REPO}, ${ECR_FRONTEND_REPO}"
     echo "  - S3 Bucket: ${S3_BUCKET_NAME}"
     echo "  - RDS Instance: ${PROJECT_NAME}-db (${DB_ENDPOINT})"
     echo "  - ECS Cluster: ${ECS_CLUSTER_NAME}"
-    echo "  - ECS Service: ${ECS_BACKEND_SERVICE}"
+    echo "  - ECS Services: ${ECS_BACKEND_SERVICE}, ${ECS_FRONTEND_SERVICE}"
     echo "  - Load Balancer: ${PROJECT_NAME}-alb"
     echo ""
     echo "Test your deployment:"
     echo "  curl http://${ALB_DNS}/health"
+    echo "  curl http://${ALB_DNS}/tracks"
+    echo ""
+    echo "Submit to autograder:"
+    echo "  URL: http://${ALB_DNS}"
     echo ""
     echo "=========================================="
 }
