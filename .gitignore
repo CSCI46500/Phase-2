@@ -1,0 +1,41 @@
+# Environment variables - NEVER commit these!
+.env
+*.env
+!.env.example
+!.env.docker
+.env.aws
+.env.production
+
+# AWS temporary files
+ecs-trust-policy.json
+ecs-task-policy.json
+backend-task-definition.json
+backend-service.json
+budget.json
+budget-notifications.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
