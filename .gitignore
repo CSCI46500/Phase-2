@@ -2,6 +2,17 @@
 .env
 *.env
 !.env.example
+!.env.docker
+.env.aws
+.env.production
+
+# AWS temporary files
+ecs-trust-policy.json
+ecs-task-policy.json
+backend-task-definition.json
+backend-service.json
+budget.json
+budget-notifications.json
 
 # Python
 __pycache__/
