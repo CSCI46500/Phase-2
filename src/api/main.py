@@ -26,6 +26,7 @@ from src.core.auth import (
     generate_token,
     create_user,
     get_current_user,
+    get_current_user_optional,
     require_permission,
     require_admin,
     init_default_admin,
@@ -535,8 +536,8 @@ async def upload_package(
 async def ingest_huggingface_model(
     request: Request,
     body: Dict[str, Any],
-    db: Session = Depends(get_db),
-    user: Optional[User] = None
+    user: User = Depends(require_permission("upload")),
+    db: Session = Depends(get_db)
 ):
     """
     Ingest a HuggingFace model with rate limiting by downloading it and storing in the registry.
@@ -566,12 +567,6 @@ async def ingest_huggingface_model(
 
     version_override = body.get("version")
     description = body.get("description")
-
-    # If no user provided, use default admin for baseline functionality
-    if user is None:
-        user = db.query(User).filter(User.username == "ece30861defaultadminuser").first()
-        if not user:
-            raise HTTPException(status_code=500, detail="Default admin user not found")
 
     logger.info(f"Ingesting HuggingFace model: {model_id} by user {user.username}")
 
@@ -863,9 +858,9 @@ async def rate_package(
 async def get_package(
     package_id: UUID,
     component: str = "full",  # Options: "full", "weights", "datasets", "code"
-    db: Session = Depends(get_db),
     request: Request = None,
-    user: Optional[User] = None
+    user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Download a package.
@@ -884,10 +879,6 @@ async def get_package(
     package = crud.get_package_by_id(db, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
-
-    # If no user provided, use default admin for baseline functionality
-    if user is None:
-        user = db.query(User).filter(User.username == "ece30861defaultadminuser").first()
 
     # Log download
     ip_address = request.client.host if request else None

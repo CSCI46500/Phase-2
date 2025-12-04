@@ -214,6 +214,21 @@ async def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+async def get_current_user_optional(
+    x_auth_token: Optional[str] = Header(None, alias="X-Authorization"),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    FastAPI dependency to get current authenticated user from token (optional).
+    Returns None if no token provided or token is invalid.
+    Usage: user: Optional[User] = Depends(get_current_user_optional)
+    """
+    if not x_auth_token:
+        return None
+    user = verify_token(db, x_auth_token)
+    return user  # Returns None if token invalid, User if valid
+
+
 def init_default_admin(db: Session):
     """
     Initialize default admin user if not exists.
