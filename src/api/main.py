@@ -535,7 +535,8 @@ async def upload_package(
 async def ingest_huggingface_model(
     request: Request,
     body: Dict[str, Any],
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: Optional[User] = None
 ):
     """
     Ingest a HuggingFace model with rate limiting by downloading it and storing in the registry.
@@ -565,6 +566,12 @@ async def ingest_huggingface_model(
 
     version_override = body.get("version")
     description = body.get("description")
+
+    # If no user provided, use default admin for baseline functionality
+    if user is None:
+        user = db.query(User).filter(User.username == "ece30861defaultadminuser").first()
+        if not user:
+            raise HTTPException(status_code=500, detail="Default admin user not found")
 
     logger.info(f"Ingesting HuggingFace model: {model_id} by user {user.username}")
 
@@ -857,7 +864,8 @@ async def get_package(
     package_id: UUID,
     component: str = "full",  # Options: "full", "weights", "datasets", "code"
     db: Session = Depends(get_db),
-    request: Request = None
+    request: Request = None,
+    user: Optional[User] = None
 ):
     """
     Download a package.
@@ -877,10 +885,15 @@ async def get_package(
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
 
+    # If no user provided, use default admin for baseline functionality
+    if user is None:
+        user = db.query(User).filter(User.username == "ece30861defaultadminuser").first()
+
     # Log download
     ip_address = request.client.host if request else None
     user_agent = request.headers.get("user-agent") if request else None
-    crud.log_download(db, package_id, user.id, ip_address, user_agent)
+    user_id = user.id if user else None
+    crud.log_download(db, package_id, user_id, ip_address, user_agent)
 
     # Extract S3 key from s3:// URL
     s3_key = package.s3_path.replace(f"s3://{s3_helper.bucket_name}/", "")
