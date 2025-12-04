@@ -1349,12 +1349,15 @@ async def reset_system(
     # Reset database
     crud.reset_system(db, keep_admin=True)
 
-    logger.warning("System reset completed")
+    # Verify reset by querying packages count
+    package_count = db.query(Package).count()
+    logger.warning(f"System reset completed - {package_count} packages remaining (should be 0)")
 
     return {
         "message": "System reset to default state",
         "s3_objects_deleted": s3_deleted_count,
-        "database_reset": True
+        "database_reset": True,
+        "packages_remaining": package_count
     }
 
 

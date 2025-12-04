@@ -27,16 +27,21 @@ def reset_system(db: Session, keep_admin: bool = True) -> None:
     # Delete all packages (cascades to related tables)
     db.query(Package).delete()
 
+    # Flush changes to database before commit
+    db.flush()
+
+    # Commit the transaction
     db.commit()
 
-    # Ensure changes are flushed and visible immediately
-    db.flush()
+    # Expire all cached objects to force fresh reads
     db.expire_all()
 
-    # Force a synchronous checkpoint to ensure changes are visible
-    # This helps with race conditions when the autograder queries immediately after reset
+    # Verify the reset worked by counting packages using raw SQL
+    # This ensures we're reading fresh data, not cached
     from sqlalchemy import text
-    db.execute(text("SELECT pg_sleep(0.1)"))  # 100ms delay to ensure propagation
-    db.execute(text("SELECT 1"))  # Dummy query to force connection refresh
+    count = db.execute(text("SELECT COUNT(*) FROM packages")).scalar()
+    if count != 0:
+        logger.error(f"Reset verification failed: {count} packages still exist!")
+        raise Exception(f"Reset failed: {count} packages still exist after deletion")
 
-    logger.info("System reset completed")
+    logger.info(f"System reset completed and verified (0 packages remain)")
