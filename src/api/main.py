@@ -826,6 +826,7 @@ async def ingest_huggingface_model(
 async def rate_package(
     package_id: UUID,
     rating_req: RatingRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """
@@ -838,6 +839,12 @@ async def rate_package(
     package = crud.get_package_by_id(db, package_id)
     if not package:
         raise HTTPException(status_code=404, detail="Package not found")
+
+    # Use default admin if no user authenticated
+    if user is None:
+        user = db.query(User).filter(User.username == "ece30861defaultadminuser").first()
+        if not user:
+            raise HTTPException(status_code=500, detail="Default admin user not found")
 
     # Create/update rating
     crud.create_rating(db, package_id, user.id, rating_req.score)
