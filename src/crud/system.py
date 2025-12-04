@@ -28,4 +28,9 @@ def reset_system(db: Session, keep_admin: bool = True) -> None:
     db.query(Package).delete()
 
     db.commit()
+
+    # Ensure changes are flushed and visible immediately
+    db.flush()
+    db.expire_all()
+
     logger.info("System reset completed")
