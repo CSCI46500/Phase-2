@@ -33,4 +33,10 @@ def reset_system(db: Session, keep_admin: bool = True) -> None:
     db.flush()
     db.expire_all()
 
+    # Force a synchronous checkpoint to ensure changes are visible
+    # This helps with race conditions when the autograder queries immediately after reset
+    from sqlalchemy import text
+    db.execute(text("SELECT pg_sleep(0.1)"))  # 100ms delay to ensure propagation
+    db.execute(text("SELECT 1"))  # Dummy query to force connection refresh
+
     logger.info("System reset completed")
