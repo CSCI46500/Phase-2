@@ -225,13 +225,20 @@ GET /package/{id}?full=true
 #### POST `/packages`
 Search/enumerate packages.
 
-**Request:**
+**Request:** (Array of query objects)
 ```json
-{
-  "name": "bert",
-  "version": "1.0.0",
-  "regex": "^bert.*"
-}
+[
+  {
+    "name": "bert",
+    "version": "1.0.0",
+    "regex": "^bert.*"
+  }
+]
+```
+
+**Empty array returns all packages:**
+```json
+[]
 ```
 
 **Query Parameters:**
@@ -582,7 +589,7 @@ curl -X POST http://localhost:8000/package \
 curl -X POST http://localhost:8000/packages \
   -H "X-Authorization: YOUR_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "bert"}'
+  -d '[{"name": "bert"}]'
 ```
 
 ### 4. Download Package

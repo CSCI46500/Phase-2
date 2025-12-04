@@ -915,7 +915,7 @@ async def get_package(
 @limiter.limit(f"{settings.rate_limit_search_per_minute}/minute")
 async def search_packages(
     request: Request,
-    query: PackageQuery,
+    queries: List[PackageQuery],
     offset: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db)
@@ -927,16 +927,44 @@ async def search_packages(
 
     NOTE: This endpoint does NOT require authentication to support baseline autograder functionality.
     Authentication is only required for the Security Track extended requirements.
+
+    Accepts a list of package queries and returns packages matching ANY of the queries.
+    An empty list returns all packages.
     """
-    packages, total = crud.search_packages(
-        db=db,
-        name_query=query.name,
-        version=query.version,
-        regex=query.regex,
-        search_model_card=query.search_model_card,
-        offset=offset,
-        limit=limit
-    )
+    # If no queries provided, return all packages
+    if not queries:
+        packages, total = crud.search_packages(
+            db=db,
+            name_query=None,
+            version=None,
+            regex=None,
+            search_model_card=False,
+            offset=offset,
+            limit=limit
+        )
+    else:
+        # Collect all unique packages matching any query
+        all_packages = []
+        seen_ids = set()
+
+        for query in queries:
+            packages, _ = crud.search_packages(
+                db=db,
+                name_query=query.name,
+                version=query.version,
+                regex=query.regex,
+                search_model_card=query.search_model_card,
+                offset=0,  # Don't apply offset per query
+                limit=10000  # Get all matches per query
+            )
+            for pkg in packages:
+                if pkg.id not in seen_ids:
+                    all_packages.append(pkg)
+                    seen_ids.add(pkg.id)
+
+        # Apply offset and limit to combined results
+        total = len(all_packages)
+        packages = all_packages[offset:offset + limit]
 
     # Format response
     results = []
