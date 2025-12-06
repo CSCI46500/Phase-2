@@ -97,6 +97,25 @@ class S3Helper:
             logger.error(f"Failed to download from S3: {e}")
             return False
 
+    def download_file_to_string(self, s3_key: str) -> str:
+        """
+        Download file from S3 and return as string.
+        Args:
+            s3_key: S3 object key
+        Returns:
+            File contents as string
+        Raises:
+            ClientError: If download fails
+        """
+        try:
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
+            content = response['Body'].read().decode('utf-8')
+            logger.info(f"Downloaded text content from S3: s3://{self.bucket_name}/{s3_key}")
+            return content
+        except ClientError as e:
+            logger.error(f"Failed to download text from S3: {e}")
+            raise
+
     def generate_presigned_url(
         self,
         s3_key: str,

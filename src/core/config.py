@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     default_api_calls: int = 1000
     secret_key: str = "change-this-secret-key-in-production"
 
-    # Security - Use ACME default admin credentials
+    # Security - Use ACME default admin credentials (from OpenAPI spec)
     admin_username: str = "ece30861defaultadminuser"
-    admin_password: str = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
+    admin_password: str = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"
 
     # Logging
     log_level: str = "INFO"
