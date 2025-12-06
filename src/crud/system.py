@@ -14,31 +14,50 @@ def reset_system(db: Session, keep_admin: bool = True) -> None:
     """
     Reset system by truncating all tables.
     Optionally keeps default admin user.
+    Uses TRUNCATE for fast, guaranteed deletion.
     """
+    from sqlalchemy import text
+
     logger.warning("Resetting system...")
 
-    if keep_admin:
-        # Delete all users except the default admin (required by autograder spec)
-        admin_username = "ece30861defaultadminuser"
-        db.query(User).filter(User.username != admin_username).delete()
-    else:
-        db.query(User).delete()
+    # Use TRUNCATE for guaranteed immediate deletion
+    # TRUNCATE is faster and ensures immediate visibility across all connections
+    try:
+        # Disable foreign key checks temporarily for clean truncation
+        db.execute(text("SET session_replication_role = 'replica';"))
 
-    # Delete all packages (cascades to related tables)
-    db.query(Package).delete()
+        # Truncate tables in correct order (respecting foreign keys)
+        db.execute(text("TRUNCATE TABLE download_history CASCADE;"))
+        db.execute(text("TRUNCATE TABLE ratings CASCADE;"))
+        db.execute(text("TRUNCATE TABLE lineage CASCADE;"))
+        db.execute(text("TRUNCATE TABLE metrics CASCADE;"))
+        db.execute(text("TRUNCATE TABLE package_confusion_audit CASCADE;"))
+        db.execute(text("TRUNCATE TABLE system_metrics CASCADE;"))
+        db.execute(text("TRUNCATE TABLE packages CASCADE;"))
 
-    # Flush changes to database before commit
-    db.flush()
+        # Truncate users table but keep admin
+        if keep_admin:
+            admin_username = "ece30861defaultadminuser"
+            # Delete non-admin users
+            db.execute(text(f"DELETE FROM users WHERE username != '{admin_username}';"))
+        else:
+            db.execute(text("TRUNCATE TABLE users CASCADE;"))
 
-    # Commit the transaction
-    db.commit()
+        # Re-enable foreign key checks
+        db.execute(text("SET session_replication_role = 'origin';"))
 
-    # Expire all cached objects to force fresh reads
-    db.expire_all()
+        # Commit immediately
+        db.commit()
 
-    # Verify the reset worked by counting packages using raw SQL
-    # This ensures we're reading fresh data, not cached
-    from sqlalchemy import text
+    except Exception as e:
+        logger.error(f"Reset failed: {e}")
+        db.rollback()
+        # Re-enable foreign key checks even on failure
+        db.execute(text("SET session_replication_role = 'origin';"))
+        db.commit()
+        raise
+
+    # Verify the reset worked
     count = db.execute(text("SELECT COUNT(*) FROM packages")).scalar()
     if count != 0:
         logger.error(f"Reset verification failed: {count} packages still exist!")
