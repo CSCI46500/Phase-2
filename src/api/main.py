@@ -20,7 +20,7 @@ from datetime import datetime
 from enum import Enum
 
 from src.core.database import get_db, init_db, get_db_context
-from src.core.models import User, Package, Metrics, Lineage, DownloadHistory
+from src.core.models import User, Package, Metrics, Lineage, DownloadHistory, Token, Rating, PackageConfusionAudit, SystemMetrics
 from src.core.auth import (
     authenticate_user,
     generate_token,
@@ -334,20 +334,74 @@ async def reset_registry(
 ):
     """
     Reset the registry to a system default state. (BASELINE)
+    Deletes all artifacts, tokens (except admin), and related data.
     """
     logger.warning("System reset initiated")
 
-    # Delete all S3 objects
+    # Step 1: Delete all S3 objects
     try:
-        s3_helper.delete_all_objects()
+        deleted_count = s3_helper.delete_all_objects()
+        logger.info(f"Deleted {deleted_count} S3 objects")
     except Exception as e:
         logger.error(f"Failed to delete S3 objects: {e}")
 
-    # Delete all packages (cascade deletes metrics, lineage, etc.)
-    db.query(Package).delete()
-    db.commit()
+    # Step 2: Delete all related records (in correct order to respect foreign keys)
+    # Delete in order: dependent tables first, then packages
+    try:
+        # Delete download history
+        db.query(DownloadHistory).delete()
 
-    logger.info("System reset complete")
+        # Delete ratings
+        db.query(Rating).delete()
+
+        # Delete lineage
+        db.query(Lineage).delete()
+
+        # Delete metrics
+        db.query(Metrics).delete()
+
+        # Delete package confusion audit
+        db.query(PackageConfusionAudit).delete()
+
+        # Delete system metrics
+        db.query(SystemMetrics).delete()
+
+        # Delete all packages
+        db.query(Package).delete()
+
+        # Delete all tokens (users can re-authenticate)
+        db.query(Token).delete()
+
+        # Commit all deletions
+        db.commit()
+
+        # Force a flush to ensure changes are visible
+        db.flush()
+
+    except Exception as e:
+        logger.error(f"Failed to delete database records: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Reset failed")
+
+    # Step 3: Re-initialize the default admin user with correct password
+    # Delete and recreate to ensure password matches current config
+    try:
+        admin = db.query(User).filter(User.username == settings.admin_username).first()
+        if admin:
+            db.delete(admin)
+            db.commit()
+        # Recreate admin with current config password
+        init_default_admin(db)
+    except Exception as e:
+        logger.error(f"Failed to reinitialize admin user: {e}")
+
+    # Step 4: Verify reset was successful
+    package_count = db.query(Package).count()
+    if package_count != 0:
+        logger.error(f"Reset verification failed: {package_count} packages still exist")
+        raise HTTPException(status_code=500, detail="Reset verification failed")
+
+    logger.info("System reset complete - verified 0 packages remain")
     return {"message": "Registry reset"}
 
 
