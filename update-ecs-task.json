@@ -1,1 +1,72 @@
-
+{
+    "family": "model-registry-backend",
+    "taskRoleArn": "arn:aws:iam::187641964754:role/ecsTaskExecutionRole-model-registry",
+    "executionRoleArn": "arn:aws:iam::187641964754:role/ecsTaskExecutionRole-model-registry",
+    "networkMode": "awsvpc",
+    "containerDefinitions": [
+        {
+            "name": "backend",
+            "image": "187641964754.dkr.ecr.us-east-1.amazonaws.com/model-backend:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "AWS_REGION",
+                    "value": "us-east-1"
+                },
+                {
+                    "name": "DATABASE_URL",
+                    "value": "postgresql://dbadmin:OVN5QnVqUIHK7hldKEieAk8tJIEyQZ4cTSmSCztERyk=@model-registry-db.ckd8osg2kl6v.us-east-1.rds.amazonaws.com:5432/modelregistry"
+                },
+                {
+                    "name": "ADMIN_PASSWORD",
+                    "value": "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
+                },
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "production"
+                },
+                {
+                    "name": "SECRET_KEY",
+                    "value": "03fb1d9d3b38b9a9ba8cca383c59bfb14d3226ed74a92b4da6977d4817622e59"
+                },
+                {
+                    "name": "S3_BUCKET_NAME",
+                    "value": "modelregistry-models-187641964754"
+                },
+                {
+                    "name": "ADMIN_USERNAME",
+                    "value": "ece30861defaultadminuser"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/model-registry-backend",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8000/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 60
+            }
+        }
+    ],
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512"
+}
