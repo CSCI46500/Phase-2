@@ -25,6 +25,13 @@ type HealthMetric = {
   lastChecked?: string;
 };
 
+type ComponentHealth = {
+  status: string;
+  response_time?: number;
+  message?: string;
+  last_checked?: string;
+};
+
 const HealthDashboard: React.FC = () => {
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
   const [refreshInterval, setRefreshInterval] = useState<number>(30);
@@ -67,7 +74,7 @@ const HealthDashboard: React.FC = () => {
   const getOverallStatus = (): ComponentStatus => {
     if (!data || !data.components) return 'unknown';
 
-    const statuses = Object.values(data.components).map((c: any) => c.status);
+    const statuses = Object.values(data.components).map((c: ComponentHealth) => c.status);
     if (statuses.every((s) => s === 'healthy')) return 'healthy';
     if (statuses.some((s) => s === 'down')) return 'down';
     if (statuses.some((s) => s === 'degraded')) return 'degraded';
@@ -77,7 +84,7 @@ const HealthDashboard: React.FC = () => {
   const getHealthMetrics = (): HealthMetric[] => {
     if (!data || !data.components) return [];
 
-    return Object.entries(data.components).map(([name, component]: [string, any]) => ({
+    return Object.entries(data.components).map(([name, component]: [string, ComponentHealth]) => ({
       name: name.charAt(0).toUpperCase() + name.slice(1),
       status: component.status || 'unknown',
       responseTime: component.response_time,
