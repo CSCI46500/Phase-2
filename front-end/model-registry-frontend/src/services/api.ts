@@ -113,33 +113,34 @@ export const modelRegistryAPI = {
         const p = pkg as Record<string, unknown>;
         const metrics = (p.metrics || {}) as Record<string, number | Record<string, number>>;
         return {
-        id: p.id as string,
-        name: p.name as string,
-        version: (p.version as string) || '1.0.0',
-        description: (p.description as string) || '',
-        score: (p.net_score as number) || 0,
-        license: p.license as string,
-        createdAt: p.upload_date as string,
-        updatedAt: p.upload_date as string,
-        metrics: {
-          // Phase 1 metrics
-          rampUp: (metrics.ramp_up as number) || 0,
-          correctness: (metrics.correctness as number) || 0,
-          busFactor: (metrics.bus_factor as number) || 0,
-          responsiveMaintainer: (metrics.responsive_maintainer as number) || 0,
-          license: (metrics.license_score as number) || 0,
+          id: p.id as string,
+          name: p.name as string,
+          version: (p.version as string) || '1.0.0',
+          description: (p.description as string) || '',
+          score: (p.net_score as number) || 0,
+          license: p.license as string,
+          createdAt: p.upload_date as string,
+          updatedAt: p.upload_date as string,
+          metrics: {
+            // Phase 1 metrics
+            rampUp: (metrics.ramp_up as number) || 0,
+            correctness: (metrics.correctness as number) || 0,
+            busFactor: (metrics.bus_factor as number) || 0,
+            responsiveMaintainer: (metrics.responsive_maintainer as number) || 0,
+            license: (metrics.license_score as number) || 0,
 
-          // Phase 2 metrics
-          reviewedness: metrics.reviewedness as number | undefined,
-          reproducibility: metrics.reproducibility as number | undefined,
-          treeScore: metrics.tree_score as number | undefined,
-          performanceClaims: metrics.performance_claims as number | undefined,
-          datasetQuality: metrics.dataset_quality as number | undefined,
-          codeQuality: metrics.code_quality as number | undefined,
-          datasetAndCodeScore: metrics.dataset_and_code_score as number | undefined,
-          sizeScore: metrics.size_score as number | Record<string, number> | undefined,
-        }
-      })),
+            // Phase 2 metrics
+            reviewedness: metrics.reviewedness as number | undefined,
+            reproducibility: metrics.reproducibility as number | undefined,
+            treeScore: metrics.tree_score as number | undefined,
+            performanceClaims: metrics.performance_claims as number | undefined,
+            datasetQuality: metrics.dataset_quality as number | undefined,
+            codeQuality: metrics.code_quality as number | undefined,
+            datasetAndCodeScore: metrics.dataset_and_code_score as number | undefined,
+            sizeScore: metrics.size_score as number | Record<string, number> | undefined,
+          }
+        };
+      }),
       total: data.total,
       page,
       limit
