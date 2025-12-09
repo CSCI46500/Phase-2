@@ -57,24 +57,31 @@ export const modelRegistryAPI = {
       version,
       description
     };
-    const response = await apiClient.post<any>('/package/ingest-huggingface', payload);
+    const response = await apiClient.post<unknown>('/package/ingest-huggingface', payload);
+    const data = response.data as {
+      package_id: string;
+      name: string;
+      net_score?: number;
+      metrics?: Record<string, number>;
+      message?: string;
+    };
 
     // Transform backend response to frontend format
     return {
-      id: response.data.package_id,
-      name: response.data.name,
-      score: response.data.net_score || 0,
+      id: data.package_id,
+      name: data.name,
+      score: data.net_score || 0,
       metrics: {
-        rampUp: response.data.metrics?.ramp_up_time || 0,
-        correctness: response.data.metrics?.code_quality || 0,
-        busFactor: response.data.metrics?.bus_factor || 0,
-        responsiveMaintainer: response.data.metrics?.reviewedness || 0,
-        license: response.data.metrics?.license || 0,
-        reviewedness: response.data.metrics?.reviewedness,
-        reproducibility: response.data.metrics?.reproducibility,
+        rampUp: data.metrics?.ramp_up_time || 0,
+        correctness: data.metrics?.code_quality || 0,
+        busFactor: data.metrics?.bus_factor || 0,
+        responsiveMaintainer: data.metrics?.reviewedness || 0,
+        license: data.metrics?.license || 0,
+        reviewedness: data.metrics?.reviewedness,
+        reproducibility: data.metrics?.reproducibility,
       },
       status: 'success',
-      message: response.data.message
+      message: data.message
     };
   },
 
@@ -86,47 +93,54 @@ export const modelRegistryAPI = {
     offset: number = 0,
     limit: number = 50
   ): Promise<SearchResponse> => {
-    const query: any = {};
+    const query: { name?: string; version?: string; regex?: string } = {};
     if (nameQuery) query.name = nameQuery;
     if (version) query.version = version;
     if (regex) query.regex = regex;
 
-    const response = await apiClient.post<any>('/packages', query, {
+    const response = await apiClient.post<unknown>('/packages', query, {
       params: { offset, limit }
     });
+    const data = response.data as {
+      packages: unknown[];
+      total: number;
+    };
 
     // Transform backend response to frontend format
     const page = Math.floor(offset / limit) + 1;
     return {
-      artifacts: response.data.packages.map((pkg: any) => ({
-        id: pkg.id,
-        name: pkg.name,
-        version: pkg.version || '1.0.0',
-        description: pkg.description || '',
-        score: pkg.net_score || 0,
-        license: pkg.license,
-        createdAt: pkg.upload_date,
-        updatedAt: pkg.upload_date,
+      artifacts: data.packages.map((pkg: unknown) => {
+        const p = pkg as Record<string, unknown>;
+        const metrics = (p.metrics || {}) as Record<string, number | Record<string, number>>;
+        return {
+        id: p.id as string,
+        name: p.name as string,
+        version: (p.version as string) || '1.0.0',
+        description: (p.description as string) || '',
+        score: (p.net_score as number) || 0,
+        license: p.license as string,
+        createdAt: p.upload_date as string,
+        updatedAt: p.upload_date as string,
         metrics: {
           // Phase 1 metrics
-          rampUp: pkg.metrics?.ramp_up || 0,
-          correctness: pkg.metrics?.correctness || 0,
-          busFactor: pkg.metrics?.bus_factor || 0,
-          responsiveMaintainer: pkg.metrics?.responsive_maintainer || 0,
-          license: pkg.metrics?.license_score || 0,
+          rampUp: (metrics.ramp_up as number) || 0,
+          correctness: (metrics.correctness as number) || 0,
+          busFactor: (metrics.bus_factor as number) || 0,
+          responsiveMaintainer: (metrics.responsive_maintainer as number) || 0,
+          license: (metrics.license_score as number) || 0,
 
           // Phase 2 metrics
-          reviewedness: pkg.metrics?.reviewedness,
-          reproducibility: pkg.metrics?.reproducibility,
-          treeScore: pkg.metrics?.tree_score,
-          performanceClaims: pkg.metrics?.performance_claims,
-          datasetQuality: pkg.metrics?.dataset_quality,
-          codeQuality: pkg.metrics?.code_quality,
-          datasetAndCodeScore: pkg.metrics?.dataset_and_code_score,
-          sizeScore: pkg.metrics?.size_score,
+          reviewedness: metrics.reviewedness as number | undefined,
+          reproducibility: metrics.reproducibility as number | undefined,
+          treeScore: metrics.tree_score as number | undefined,
+          performanceClaims: metrics.performance_claims as number | undefined,
+          datasetQuality: metrics.dataset_quality as number | undefined,
+          codeQuality: metrics.code_quality as number | undefined,
+          datasetAndCodeScore: metrics.dataset_and_code_score as number | undefined,
+          sizeScore: metrics.size_score as number | Record<string, number> | undefined,
         }
       })),
-      total: response.data.total,
+      total: data.total,
       page,
       limit
     };
@@ -134,35 +148,37 @@ export const modelRegistryAPI = {
 
   // Get package by ID
   getPackageById: async (id: string): Promise<Artifact> => {
-    const response = await apiClient.get<any>(`/package/${id}/metadata`);
+    const response = await apiClient.get<unknown>(`/package/${id}/metadata`);
+    const p = response.data as Record<string, unknown>;
+    const metrics = (p.metrics || {}) as Record<string, number | Record<string, number>>;
 
     // Transform backend response to frontend format
     return {
-      id: response.data.id,
-      name: response.data.name,
-      version: response.data.version || '1.0.0',
-      description: response.data.description || '',
-      score: response.data.metrics?.net_score || 0,
-      license: response.data.license,
-      createdAt: response.data.upload_date,
-      updatedAt: response.data.upload_date,
+      id: p.id as string,
+      name: p.name as string,
+      version: (p.version as string) || '1.0.0',
+      description: (p.description as string) || '',
+      score: (metrics.net_score as number) || 0,
+      license: p.license as string,
+      createdAt: p.upload_date as string,
+      updatedAt: p.upload_date as string,
       metrics: {
         // Phase 1 metrics
-        rampUp: response.data.metrics?.ramp_up || 0,
-        correctness: response.data.metrics?.correctness || 0,
-        busFactor: response.data.metrics?.bus_factor || 0,
-        responsiveMaintainer: response.data.metrics?.responsive_maintainer || 0,
-        license: response.data.metrics?.license_score || 0,
+        rampUp: (metrics.ramp_up as number) || 0,
+        correctness: (metrics.correctness as number) || 0,
+        busFactor: (metrics.bus_factor as number) || 0,
+        responsiveMaintainer: (metrics.responsive_maintainer as number) || 0,
+        license: (metrics.license_score as number) || 0,
 
         // Phase 2 metrics
-        reviewedness: response.data.metrics?.reviewedness,
-        reproducibility: response.data.metrics?.reproducibility,
-        treeScore: response.data.metrics?.tree_score,
-        performanceClaims: response.data.metrics?.performance_claims,
-        datasetQuality: response.data.metrics?.dataset_quality,
-        codeQuality: response.data.metrics?.code_quality,
-        datasetAndCodeScore: response.data.metrics?.dataset_and_code_score,
-        sizeScore: response.data.metrics?.size_score,
+        reviewedness: metrics.reviewedness as number | undefined,
+        reproducibility: metrics.reproducibility as number | undefined,
+        treeScore: metrics.tree_score as number | undefined,
+        performanceClaims: metrics.performance_claims as number | undefined,
+        datasetQuality: metrics.dataset_quality as number | undefined,
+        codeQuality: metrics.code_quality as number | undefined,
+        datasetAndCodeScore: metrics.dataset_and_code_score as number | undefined,
+        sizeScore: metrics.size_score as number | Record<string, number> | undefined,
       }
     };
   },
@@ -174,14 +190,14 @@ export const modelRegistryAPI = {
 
   // Download package
   downloadPackage: async (id: string): Promise<{ download_url: string; expires_in_seconds: number }> => {
-    const response = await apiClient.get<any>(`/package/${id}`);
-    return response.data;
+    const response = await apiClient.get<unknown>(`/package/${id}`);
+    return response.data as { download_url: string; expires_in_seconds: number };
   },
 
   // Health check
-  healthCheck: async (): Promise<{ status: string; components: any }> => {
-    const response = await apiClient.get('/health');
-    return response.data;
+  healthCheck: async (): Promise<{ status: string; components: Record<string, unknown> }> => {
+    const response = await apiClient.get<unknown>('/health');
+    return response.data as { status: string; components: Record<string, unknown> };
   },
 
   // Get logs with filtering
@@ -194,20 +210,21 @@ export const modelRegistryAPI = {
     offset: number = 0,
     limit: number = 100
   ): Promise<LogsResponse> => {
-    const params: any = { offset, limit };
+    const params: Record<string, string | number> = { offset, limit };
     if (level) params.level = level;
     if (source) params.source = source;
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     if (search) params.search = search;
 
-    const response = await apiClient.get<any>('/logs', { params });
+    const response = await apiClient.get<unknown>('/logs', { params });
+    const data = response.data as { logs?: unknown[]; total?: number };
 
     // Transform backend response to frontend format
     const page = Math.floor(offset / limit) + 1;
     return {
-      logs: response.data.logs || [],
-      total: response.data.total || 0,
+      logs: (data.logs as LogEntry[]) || [],
+      total: data.total || 0,
       page,
       limit
     };

@@ -4,7 +4,7 @@ import type { ApiError } from '../types';
 
 type HealthData = {
   status: string;
-  components: Record<string, any>;
+  components: Record<string, unknown>;
   uptime?: number;
   version?: string;
   environment?: string;

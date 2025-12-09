@@ -15,7 +15,7 @@ export type ModelMetrics = {
   datasetQuality?: number;
   codeQuality?: number;
   datasetAndCodeScore?: number;
-  sizeScore?: any; // Can be number or object with platform-specific scores
+  sizeScore?: number | Record<string, number>; // Can be number or object with platform-specific scores
 };
 
 export type Artifact = {
@@ -70,7 +70,7 @@ export type LogEntry = {
   message: string;
   source?: string;
   user?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 };
 
 export type LogsResponse = {

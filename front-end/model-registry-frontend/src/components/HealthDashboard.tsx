@@ -67,7 +67,7 @@ const HealthDashboard: React.FC = () => {
   const getOverallStatus = (): ComponentStatus => {
     if (!data || !data.components) return 'unknown';
 
-    const statuses = Object.values(data.components).map((c: any) => c.status);
+    const statuses = Object.values(data.components).map((c: unknown) => (c as { status: string }).status);
     if (statuses.every((s) => s === 'healthy')) return 'healthy';
     if (statuses.some((s) => s === 'down')) return 'down';
     if (statuses.some((s) => s === 'degraded')) return 'degraded';
@@ -77,13 +77,16 @@ const HealthDashboard: React.FC = () => {
   const getHealthMetrics = (): HealthMetric[] => {
     if (!data || !data.components) return [];
 
-    return Object.entries(data.components).map(([name, component]: [string, any]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      status: component.status || 'unknown',
-      responseTime: component.response_time,
-      message: component.message,
-      lastChecked: component.last_checked,
-    }));
+    return Object.entries(data.components).map(([name, component]: [string, unknown]) => {
+      const comp = component as { status?: string; response_time?: number; message?: string; last_checked?: string };
+      return {
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        status: comp.status || 'unknown',
+        responseTime: comp.response_time,
+        message: comp.message,
+        lastChecked: comp.last_checked,
+      };
+    });
   };
 
   const overallStatus = getOverallStatus();
