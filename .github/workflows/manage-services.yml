@@ -1,0 +1,139 @@
+name: Manage ECS Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - start
+          - stop
+        default: 'start'
+      service:
+        description: 'Service to manage'
+        required: true
+        type: choice
+        options:
+          - both
+          - backend
+          - frontend
+        default: 'both'
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: model-cluster
+  BACKEND_SERVICE: model-backend-service
+  FRONTEND_SERVICE: model-frontend-service
+
+jobs:
+  manage-services:
+    name: ${{ inputs.action == 'start' && 'Start' || 'Stop' }} ECS Services
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Manage Backend Service
+        if: inputs.service == 'backend' || inputs.service == 'both'
+        run: |
+          DESIRED_COUNT=${{ inputs.action == 'start' && '1' || '0' }}
+          ACTION_TEXT=${{ inputs.action == 'start' && 'Starting' || 'Stopping' }}
+
+          echo "$ACTION_TEXT backend service..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.BACKEND_SERVICE }} \
+            --desired-count $DESIRED_COUNT \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Backend service updated to desired count: $DESIRED_COUNT"
+
+      - name: Manage Frontend Service
+        if: inputs.service == 'frontend' || inputs.service == 'both'
+        run: |
+          DESIRED_COUNT=${{ inputs.action == 'start' && '1' || '0' }}
+          ACTION_TEXT=${{ inputs.action == 'start' && 'Starting' || 'Stopping' }}
+
+          echo "$ACTION_TEXT frontend service..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.FRONTEND_SERVICE }} \
+            --desired-count $DESIRED_COUNT \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Frontend service updated to desired count: $DESIRED_COUNT"
+
+      - name: Wait for services to stabilize
+        if: inputs.action == 'start'
+        run: |
+          echo "Waiting for services to start up..."
+
+          if [[ "${{ inputs.service }}" == "backend" || "${{ inputs.service }}" == "both" ]]; then
+            echo "Waiting for backend service..."
+            aws ecs wait services-stable \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.BACKEND_SERVICE }} \
+              --region ${{ env.AWS_REGION }}
+          fi
+
+          if [[ "${{ inputs.service }}" == "frontend" || "${{ inputs.service }}" == "both" ]]; then
+            echo "Waiting for frontend service..."
+            aws ecs wait services-stable \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.FRONTEND_SERVICE }} \
+              --region ${{ env.AWS_REGION }}
+          fi
+
+          echo "All services are stable!"
+
+      - name: Get service status
+        run: |
+          if [[ "${{ inputs.service }}" == "backend" || "${{ inputs.service }}" == "both" ]]; then
+            echo "Backend Service Status:"
+            aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.BACKEND_SERVICE }} \
+              --region ${{ env.AWS_REGION }} \
+              --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
+              --output table
+          fi
+
+          if [[ "${{ inputs.service }}" == "frontend" || "${{ inputs.service }}" == "both" ]]; then
+            echo "Frontend Service Status:"
+            aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.FRONTEND_SERVICE }} \
+              --region ${{ env.AWS_REGION }} \
+              --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
+              --output table
+          fi
+
+      - name: Summary
+        run: |
+          ACTION_EMOJI=${{ inputs.action == 'start' && ':rocket:' || ':stop_sign:' }}
+          ACTION_TEXT=${{ inputs.action == 'start' && 'Started' || 'Stopped' }}
+
+          echo "### Services $ACTION_TEXT $ACTION_EMOJI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action**: $ACTION_TEXT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service(s)**: ${{ inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ inputs.action }}" == "start" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo ":warning: **Remember to stop services when done testing to save costs!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo ":white_check_mark: **Services stopped - saving costs**" >> $GITHUB_STEP_SUMMARY
+          fi

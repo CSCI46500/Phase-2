@@ -57,3 +57,13 @@ jobs:
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }}
+
+      - name: Scale down service to save costs
+        if: success()
+        run: |
+          echo "Scaling service to 0 tasks to save AWS costs..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --desired-count 0
+          echo "Service scaled down successfully. Use 'Manage ECS Services' workflow to start when needed."

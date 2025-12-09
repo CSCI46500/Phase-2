@@ -80,6 +80,17 @@ jobs:
             --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
             --output table
 
+      - name: Scale down service to save costs
+        if: success()
+        run: |
+          echo "Scaling service to 0 tasks to save AWS costs..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --desired-count 0 \
+            --region ${{ env.AWS_REGION }}
+          echo "Service scaled down successfully. Use 'Start Services' workflow to start when needed."
+
       - name: Deployment Summary
         run: |
           echo "### Frontend Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
@@ -88,3 +99,6 @@ jobs:
           echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo ":white_check_mark: **Service scaled to 0** to save costs" >> $GITHUB_STEP_SUMMARY
+          echo "Run the 'Start Services' workflow when you need to test" >> $GITHUB_STEP_SUMMARY
