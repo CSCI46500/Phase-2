@@ -1,0 +1,108 @@
+name: Docker Build & Test
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  docker-compose-test:
+    name: Test Docker Compose Setup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create .env.docker file
+        run: |
+          cat > .env.docker << EOF
+          POSTGRES_USER=phase2user
+          POSTGRES_PASSWORD=phase2password
+          POSTGRES_DB=phase2db
+          MINIO_ROOT_USER=minioadmin
+          MINIO_ROOT_PASSWORD=minioadmin123
+          S3_BUCKET_NAME=phase2-models
+          API_HOST=0.0.0.0
+          API_PORT=8000
+          ENVIRONMENT=local
+          ADMIN_USERNAME=ece30861defaultadminuser
+          ADMIN_PASSWORD=correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages
+          TOKEN_EXPIRY_DAYS=30
+          DEFAULT_API_CALL_LIMIT=1000
+          EOF
+
+      - name: Build Docker images
+        run: |
+          docker compose build
+
+      - name: Start services
+        run: |
+          docker compose up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+
+          # Check API health
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/health; then
+              echo "API is healthy!"
+              break
+            fi
+            echo "Waiting for API... (attempt $i/10)"
+            sleep 5
+          done
+
+      - name: Show service logs
+        if: always()
+        run: |
+          docker compose logs
+
+      - name: Stop services
+        if: always()
+        run: |
+          docker compose down -v
+
+  backend-docker-build:
+    name: Build Backend Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          push: false
+          tags: backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  frontend-docker-build:
+    name: Build Frontend Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./front-end/model-registry-frontend
+          file: ./front-end/model-registry-frontend/Dockerfile.production
+          push: false
+          tags: frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
