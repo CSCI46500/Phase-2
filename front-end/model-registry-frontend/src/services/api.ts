@@ -8,63 +8,6 @@ import type {
   LogLevel
 } from '../types';
 
-// Backend API response types
-type BackendIngestResponse = {
-  package_id: string;
-  name: string;
-  net_score?: number;
-  metrics?: Record<string, number | object>;
-  message?: string;
-};
-
-type BackendPackage = {
-  id: string;
-  name: string;
-  version?: string;
-  description?: string;
-  net_score?: number;
-  license?: string;
-  upload_date?: string;
-  metrics?: Record<string, number | object>;
-};
-
-type BackendSearchResponse = {
-  packages: BackendPackage[];
-  total: number;
-};
-
-type ComponentHealth = {
-  status: string;
-  response_time?: number;
-  message?: string;
-  last_checked?: string;
-};
-
-type BackendHealthResponse = {
-  status: string;
-  components: Record<string, ComponentHealth>;
-  uptime?: number;
-  version?: string;
-  environment?: string;
-  timestamp?: string;
-};
-
-type SearchQuery = {
-  name?: string;
-  version?: string;
-  regex?: string;
-};
-
-type LogParams = {
-  offset: number;
-  limit: number;
-  level?: string;
-  source?: string;
-  start_date?: string;
-  end_date?: string;
-  search?: string;
-};
-
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Create axios instance with default config
@@ -114,7 +57,7 @@ export const modelRegistryAPI = {
       version,
       description
     };
-    const response = await apiClient.post<BackendIngestResponse>('/package/ingest-huggingface', payload);
+    const response = await apiClient.post<any>('/package/ingest-huggingface', payload);
 
     // Transform backend response to frontend format
     return {
@@ -143,19 +86,19 @@ export const modelRegistryAPI = {
     offset: number = 0,
     limit: number = 50
   ): Promise<SearchResponse> => {
-    const query: SearchQuery = {};
+    const query: any = {};
     if (nameQuery) query.name = nameQuery;
     if (version) query.version = version;
     if (regex) query.regex = regex;
 
-    const response = await apiClient.post<BackendSearchResponse>('/packages', query, {
+    const response = await apiClient.post<any>('/packages', query, {
       params: { offset, limit }
     });
 
     // Transform backend response to frontend format
     const page = Math.floor(offset / limit) + 1;
     return {
-      artifacts: response.data.packages.map((pkg: BackendPackage) => ({
+      artifacts: response.data.packages.map((pkg: any) => ({
         id: pkg.id,
         name: pkg.name,
         version: pkg.version || '1.0.0',
@@ -191,7 +134,7 @@ export const modelRegistryAPI = {
 
   // Get package by ID
   getPackageById: async (id: string): Promise<Artifact> => {
-    const response = await apiClient.get<BackendPackage>(`/package/${id}/metadata`);
+    const response = await apiClient.get<any>(`/package/${id}/metadata`);
 
     // Transform backend response to frontend format
     return {
@@ -231,13 +174,13 @@ export const modelRegistryAPI = {
 
   // Download package
   downloadPackage: async (id: string): Promise<{ download_url: string; expires_in_seconds: number }> => {
-    const response = await apiClient.get<{ download_url: string; expires_in_seconds: number }>(`/package/${id}`);
+    const response = await apiClient.get<any>(`/package/${id}`);
     return response.data;
   },
 
   // Health check
-  healthCheck: async (): Promise<BackendHealthResponse> => {
-    const response = await apiClient.get<BackendHealthResponse>('/health');
+  healthCheck: async (): Promise<{ status: string; components: any }> => {
+    const response = await apiClient.get('/health');
     return response.data;
   },
 
@@ -251,14 +194,14 @@ export const modelRegistryAPI = {
     offset: number = 0,
     limit: number = 100
   ): Promise<LogsResponse> => {
-    const params: LogParams = { offset, limit };
+    const params: any = { offset, limit };
     if (level) params.level = level;
     if (source) params.source = source;
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
     if (search) params.search = search;
 
-    const response = await apiClient.get<LogsResponse>('/logs', { params });
+    const response = await apiClient.get<any>('/logs', { params });
 
     // Transform backend response to frontend format
     const page = Math.floor(offset / limit) + 1;

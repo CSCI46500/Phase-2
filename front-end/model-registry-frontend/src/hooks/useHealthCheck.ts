@@ -2,16 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { modelRegistryAPI } from '../services/api';
 import type { ApiError } from '../types';
 
-type ComponentHealth = {
-  status: string;
-  response_time?: number;
-  message?: string;
-  last_checked?: string;
-};
-
 type HealthData = {
   status: string;
-  components: Record<string, ComponentHealth>;
+  components: Record<string, any>;
   uptime?: number;
   version?: string;
   environment?: string;
