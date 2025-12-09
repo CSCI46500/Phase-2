@@ -81,7 +81,7 @@ const HealthDashboard: React.FC = () => {
       const comp = component as { status?: string; response_time?: number; message?: string; last_checked?: string };
       return {
         name: name.charAt(0).toUpperCase() + name.slice(1),
-        status: comp.status || 'unknown',
+        status: (comp.status || 'unknown') as ComponentStatus,
         responseTime: comp.response_time,
         message: comp.message,
         lastChecked: comp.last_checked,

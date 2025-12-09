@@ -5,7 +5,8 @@ import type {
   Artifact,
   ApiError,
   LogsResponse,
-  LogLevel
+  LogLevel,
+  LogEntry
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
