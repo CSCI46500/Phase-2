@@ -3,11 +3,6 @@ name: Deploy Backend to AWS ECS
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'src/**'
-      - 'requirements.txt'
-      - 'Dockerfile.production'
-      - 'docker-entrypoint.sh'
   workflow_dispatch:
 
 env:
@@ -15,11 +10,9 @@ env:
   ECR_REPOSITORY: model-backend
   ECS_CLUSTER: model-cluster
   ECS_SERVICE: model-backend-service
-  CONTAINER_NAME: backend
 
 jobs:
   deploy-backend:
-    name: Build and Deploy Backend
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -40,20 +33,16 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build, tag, and push image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Build backend Docker image
           docker build -f Dockerfile.production -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          # Push to ECR
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update ECS service
@@ -61,32 +50,10 @@ jobs:
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+            --force-new-deployment
 
-      - name: Wait for service stability
+      - name: Wait for service to stabilize
         run: |
-          echo "Waiting for ECS service to stabilize..."
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --region ${{ env.AWS_REGION }}
-
-      - name: Get deployment status
-        if: always()
-        run: |
-          aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --region ${{ env.AWS_REGION }} \
-            --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' \
-            --output table
-
-      - name: Deployment Summary
-        run: |
-          echo "### Backend Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+            --services ${{ env.ECS_SERVICE }}
