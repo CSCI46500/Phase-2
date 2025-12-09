@@ -22,6 +22,8 @@ def strip_html(text: str) -> str:
 
 
 def strip_markdown(text: str) -> str:
+    # Remove code blocks first (```language...``` or ```...```)
+    text = re.sub(r"```[\s\S]*?```", "", text)
     # Remove links: [text](url)
     text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     # Remove emphasis: **bold**, *italic*, __bold__, _italic_

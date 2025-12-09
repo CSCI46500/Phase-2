@@ -27,29 +27,27 @@ def setup_logging():
 
     log_level = level_mapping.get(log_level_env, logging.CRITICAL + 10)
 
-    # Configure root logger
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
     # Get log file path from environment
     log_file = os.environ.get("LOG_FILE")
 
+    # Configure root logger with appropriate handler
     if log_file:
-        # Add file handler
-        file_handler = logging.FileHandler(log_file, mode="a")
-        file_handler.setLevel(log_level)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        # Configure with file output
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            filename=log_file,
+            filemode="a",
         )
-        logging.getLogger().addHandler(file_handler)
     else:
-        # Default to stderr for console output
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setLevel(log_level)
-        logging.getLogger().addHandler(console_handler)
+        # Configure with stderr output (basicConfig defaults to stderr)
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            stream=sys.stderr,
+        )
 
     logger = logging.getLogger(__name__)
     if log_level_env > 0:
