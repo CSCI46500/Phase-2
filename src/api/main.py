@@ -70,6 +70,7 @@ class ArtifactQuery(BaseModel):
 class ArtifactData(BaseModel):
     url: str
     download_url: Optional[str] = None
+    name: Optional[str] = None  # Autograder sends name field
 
 
 class ArtifactMetadata(BaseModel):
@@ -430,8 +431,8 @@ async def create_artifact(
     url = artifact_data.url
     logger.info(f"Ingesting {artifact_type.value} from URL: {url}")
 
-    # Extract name from URL
-    name = extract_name_from_url(url)
+    # Use name from request if provided (autograder sends this), otherwise extract from URL
+    name = artifact_data.name if artifact_data.name else extract_name_from_url(url)
 
     # Check if artifact already exists with same name and type
     existing = db.query(Package).filter(
