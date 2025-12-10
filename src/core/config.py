@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Security - Use ACME default admin credentials (from OpenAPI spec)
     admin_username: str = "ece30861defaultadminuser"
-    admin_password: str = "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
+    admin_password: str = "correcthorsebatterystaple123(!__+@**(A'\"`;DROP TABLE artifacts;"
 
     # Logging
     log_level: str = "INFO"
