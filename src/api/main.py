@@ -233,7 +233,7 @@ def extract_name_from_url(url: str) -> str:
 
 
 async def get_current_user_from_header(
-    x_authorization: Optional[str] = Header(None, alias="X-Authorization"),
+    x_authorization: Optional[str] = Header(default=None, alias="X-Authorization"),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
     """Get current user from X-Authorization header."""

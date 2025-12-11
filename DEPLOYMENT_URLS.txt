@@ -1,13 +1,13 @@
 Phase 2 Model Registry - Deployment URLs
-Generated: Sat 06 Dec 2025 01:59:47 PM EST
+Generated: Wed 10 Dec 2025 10:52:55 PM EST
 
-Backend API:  http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com:8000
-Frontend UI:  http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com
+Backend API:  http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com:8000
+Frontend UI:  http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com
 
 For Autograder Registration:
-  endpoint:     http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com:8000
-  fe_endpoint:  http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com
+  endpoint:     http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com:8000
+  fe_endpoint:  http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com
 
-ALB DNS: model-registry-alb-1277815581.us-east-1.elb.amazonaws.com
+ALB DNS: model-registry-alb-531271739.us-east-1.elb.amazonaws.com
 RDS Endpoint: model-registry-db.ckd8osg2kl6v.us-east-1.rds.amazonaws.com
 S3 Bucket: modelregistry-models-187641964754
