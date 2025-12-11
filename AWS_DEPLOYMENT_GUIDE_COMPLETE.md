@@ -113,7 +113,7 @@ SECRET_KEY=$(openssl rand -hex 32)  # Run this and paste result
 
 # DO NOT CHANGE (required by autograder)
 ADMIN_USERNAME=ece30861defaultadminuser
-ADMIN_PASSWORD='correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
+ADMIN_PASSWORD='correcthorsebatterystaple123(!__+@**(A'"'"'"`;DROP TABLE artifacts;'
 ```
 
 ### Step 2: Run Automated Deployment
@@ -209,7 +209,7 @@ curl "http://${ALB_DNS}/"
 # Test authentication
 curl -X POST "http://${ALB_DNS}:8000/authenticate" \
   -H "Content-Type: application/json" \
-  -d '{"username": "ece30861defaultadminuser", "password": "correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"}'
+  -d '{"username": "ece30861defaultadminuser", "password": "correcthorsebatterystaple123(!__+@**(A'\''\"`;DROP TABLE artifacts;"}'
 
 # Expected response:
 # {"token":"...","calls_remaining":1000}

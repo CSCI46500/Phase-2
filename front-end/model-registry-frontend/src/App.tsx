@@ -13,7 +13,7 @@ const App: React.FC = () => {
       try {
         await modelRegistryAPI.authenticate(
           'ece30861defaultadminuser',
-          'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'
+          'correcthorsebatterystaple123(!__+@**(A\'"`;DROP TABLE artifacts;'
         );
         console.log('Authentication successful');
       } catch (error) {
