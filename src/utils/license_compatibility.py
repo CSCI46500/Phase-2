@@ -157,9 +157,10 @@ class LicenseCompatibility:
         type2 = self.get_license_type(norm2)
 
         if type1 == LicenseType.UNKNOWN or type2 == LicenseType.UNKNOWN:
+            # Give benefit of the doubt for unknown licenses - assume compatible
             result = (
-                False,
-                f"Unknown license(s): {norm1 if type1 == LicenseType.UNKNOWN else norm2}",
+                True,
+                f"Unknown license(s) - assuming compatible: {norm1 if type1 == LicenseType.UNKNOWN else norm2}",
             )
             self.compatibility_cache[cache_key] = result
             return result

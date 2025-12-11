@@ -14,6 +14,10 @@ from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
 
 logger = logging.getLogger(__name__)
 
+# Get HuggingFace token from environment variable
+# This works both locally (from .env) and on AWS (from environment variables)
+HF_TOKEN = os.getenv('HF_TOKEN')
+
 
 class HuggingFaceIngestionService:
     """Service for ingesting HuggingFace models and datasets."""
@@ -37,7 +41,7 @@ class HuggingFaceIngestionService:
             logger.info(f"Fetching metadata for model: {model_id}")
 
             # Get model info first to validate it exists and get metadata
-            info = model_info(model_id)
+            info = model_info(model_id, token=HF_TOKEN)
 
             logger.info(f"Downloading model: {model_id}")
 
@@ -46,7 +50,8 @@ class HuggingFaceIngestionService:
             local_path = snapshot_download(
                 repo_id=model_id,
                 cache_dir=cache_dir,
-                repo_type="model"
+                repo_type="model",
+                token=HF_TOKEN
             )
 
             logger.info(f"Model downloaded successfully to: {local_path}")
@@ -98,7 +103,7 @@ class HuggingFaceIngestionService:
             logger.info(f"Fetching metadata for dataset: {dataset_id}")
 
             # Get dataset info first
-            info = dataset_info(dataset_id)
+            info = dataset_info(dataset_id, token=HF_TOKEN)
 
             logger.info(f"Downloading dataset: {dataset_id}")
 
@@ -106,7 +111,8 @@ class HuggingFaceIngestionService:
             local_path = snapshot_download(
                 repo_id=dataset_id,
                 cache_dir=cache_dir,
-                repo_type="dataset"
+                repo_type="dataset",
+                token=HF_TOKEN
             )
 
             logger.info(f"Dataset downloaded successfully to: {local_path}")

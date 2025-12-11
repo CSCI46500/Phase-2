@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(aws ecs describe-task-definition:*)",
+      "Bash(aws ecs list-task-definitions:*)",
+      "Bash(aws elbv2 describe-target-group-attributes:*)",
+      "Bash(aws elbv2 describe-load-balancer-attributes:*)",
+      "Bash(curl:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(xargs:*)",
+      "Bash(cat:*)",
+      "Bash(aws ecs register-task-definition:*)",
+      "Bash(aws ecs update-service:*)",
+      "Bash(aws ecs describe-services:*)",
+      "Bash(aws elbv2 describe-target-groups:*)",
+      "Bash(aws ecs delete-service:*)",
+      "Bash(aws ecs create-service:*)",
+      "Bash(aws ecr describe-images:*)",
+      "Bash(aws ecr get-login-password:*)",
+      "Bash(docker login:*)",
+      "Bash(docker build:*)",
+      "Bash(docker push:*)",
+      "Bash(aws elbv2 describe-load-balancers:*)",
+      "Bash(python3 -c \"\nimport requests\n\nBASE_URL = ''http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com:8000''\n\n# Test what password the server is expecting\n# The password should be hardcoded, not from env var\nPASSWORD = ''correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages''\n\nauth_data = {\n    ''user'': {''name'': ''ece30861defaultadminuser'', ''is_admin'': True},\n    ''secret'': {''password'': PASSWORD}\n}\n\nprint(''Testing authentication...'')\nresp = requests.put(f''{BASE_URL}/authenticate'', json=auth_data)\nprint(f''Status: {resp.status_code}'')\nprint(f''Response: {resp.text}'')\n\")",
+      "Bash(aws logs tail:*)",
+      "Bash(aws ecs list-services:*)",
+      "Bash(aws ecs list-clusters:*)",
+      "Bash(aws ecs list-tasks:*)",
+      "Bash(aws ecs describe-tasks:*)",
+      "Bash(aws elbv2 describe-target-health:*)",
+      "Bash(aws logs create-log-group:*)",
+      "Bash(aws rds describe-db-instances:*)",
+      "Bash(source:*)",
+      "Bash(echo:*)",
+      "Bash(aws rds modify-db-instance:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

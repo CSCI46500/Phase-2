@@ -39,3 +39,10 @@ htmlcov/
 
 # Logs
 *.log
+
+# Zip files
+*.zip
+
+# Test databases
+*.db
+test_*.db
