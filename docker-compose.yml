@@ -87,7 +87,7 @@ services:
 
       # Admin User
       ADMIN_USERNAME: ece30861defaultadminuser
-      ADMIN_PASSWORD: correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages
+      ADMIN_PASSWORD: "correcthorsebatterystaple123(!__+@**(A'\"\\`;DROP TABLE artifacts;"
 
       # External APIs (optional - add your keys)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

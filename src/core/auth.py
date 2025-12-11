@@ -233,6 +233,8 @@ def init_default_admin(db: Session):
     """
     Initialize default admin user if not exists.
     Called on application startup.
+
+    Also ensures the password is always up-to-date with the config.
     """
     admin = db.query(User).filter(User.username == settings.admin_username).first()
 
@@ -247,4 +249,16 @@ def init_default_admin(db: Session):
         )
         logger.info("Default admin user created")
     else:
-        logger.info("Default admin user already exists")
+        # Ensure password matches current config (important for deployments)
+        # Verify current password matches - if not, update it
+        if not verify_password(settings.admin_password, admin.salt, admin.password_hash):
+            logger.info("Updating admin user password to match config...")
+            # Generate new salt and hash
+            new_salt = secrets.token_hex(16)
+            new_hash = hash_password(settings.admin_password, new_salt)
+            admin.salt = new_salt
+            admin.password_hash = new_hash
+            db.commit()
+            logger.info("Admin user password updated")
+        else:
+            logger.info("Default admin user already exists with correct password")
