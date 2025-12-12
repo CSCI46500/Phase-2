@@ -188,8 +188,12 @@ def get_artifact_by_id(db: Session, artifact_id: str) -> Optional[Package]:
 
 
 def generate_artifact_id_from_package(pkg: Package) -> str:
-    """Generate consistent artifact ID from package."""
-    # Use package UUID to generate consistent numeric ID
+    """Get artifact ID from package - uses the stored ID from description field."""
+    # The artifact_id is stored in the description field during creation
+    if pkg.description and "artifact_id:" in pkg.description:
+        # Extract stored artifact_id
+        return pkg.description.replace("artifact_id:", "")
+    # Fallback: generate from UUID (for legacy packages without stored ID)
     hash_bytes = hashlib.sha256(str(pkg.id).encode()).digest()
     numeric_id = int.from_bytes(hash_bytes[:8], 'big') % 10000000000
     return str(numeric_id)
