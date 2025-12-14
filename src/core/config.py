@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
 
     # Authentication
-    token_expiry_days: int = 30
+    token_expiry_hours: int = 10  # Token valid for 1000 API calls OR 10 hours
     default_api_calls: int = 1000
     secret_key: str = "change-this-secret-key-in-production"
 

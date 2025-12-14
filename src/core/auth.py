@@ -106,8 +106,8 @@ def generate_token(db: Session, user: User) -> str:
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
 
-    # Calculate expiry
-    expires_at = datetime.now() + timedelta(days=settings.token_expiry_days)
+    # Calculate expiry (10 hours as per Access Control track requirement)
+    expires_at = datetime.now() + timedelta(hours=settings.token_expiry_hours)
 
     # Store token in database
     db_token = Token(

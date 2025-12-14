@@ -105,6 +105,18 @@ class SimpleLicenseCheckRequest(BaseModel):
     github_url: str
 
 
+class SensitiveModelRequest(BaseModel):
+    js_program: str  # JavaScript code to execute before download
+
+
+class AuditLogEntry(BaseModel):
+    timestamp: str
+    user: str
+    action: str
+    artifact_id: str
+    details: Optional[Dict[str, Any]] = None
+
+
 class SizeScore(BaseModel):
     raspberry_pi: float
     jetson_nano: float
@@ -413,6 +425,7 @@ async def reset_registry(
 
 @app.post("/artifact/{artifact_type}", status_code=201)
 async def create_artifact(
+    
     artifact_type: ArtifactType,
     artifact_data: ArtifactData,
     db: Session = Depends(get_db),
@@ -622,6 +635,7 @@ async def create_artifact(
 
 @app.post("/artifacts")
 async def list_artifacts(
+    
     queries: List[ArtifactQuery],
     offset: Optional[str] = Query(None),
     db: Session = Depends(get_db)
@@ -689,6 +703,7 @@ async def list_artifacts(
 
 @app.get("/artifacts/{artifact_type}/{id}")
 async def get_artifact(
+    
     artifact_type: ArtifactType,
     id: str,
     db: Session = Depends(get_db),
@@ -811,6 +826,7 @@ async def delete_artifact(
 
 @app.get("/artifact/model/{id}/rate")
 async def get_model_rating(
+    
     id: str,
     db: Session = Depends(get_db)
 ):
@@ -1053,6 +1069,7 @@ async def check_license_compatibility(
 
 @app.post("/artifact/byRegEx")
 async def search_by_regex(
+    
     regex_req: ArtifactRegEx,
     db: Session = Depends(get_db)
 ):
@@ -1127,6 +1144,221 @@ async def get_artifact_by_name(
         ))
 
     return results
+
+
+# ========== Security Track: Sensitive Models with JS Policies ==========
+
+@app.put("/artifact/model/{id}/sensitive")
+async def mark_model_sensitive(
+    
+    id: str,
+    sensitive_req: SensitiveModelRequest,
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """
+    Mark a model as sensitive and attach a JavaScript policy program.
+    The JS program will be executed before allowing downloads.
+    (SECURITY TRACK)
+    """
+    # Find package
+    package = None
+    for pkg in db.query(Package).filter(Package.version == "model").all():
+        if generate_artifact_id_from_package(pkg) == id:
+            package = pkg
+            break
+        if pkg.description and f"artifact_id:{id}" in pkg.description:
+            package = pkg
+            break
+
+    if not package:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    # Check permission (must be admin or owner)
+    if not user.is_admin and package.uploader_id != user.id:
+        raise HTTPException(status_code=403, detail="Only model owner or admin can mark as sensitive")
+
+    # Save JS program to S3
+    import tempfile
+    temp_dir = tempfile.mkdtemp(prefix="js_policy_")
+    try:
+        js_file_path = os.path.join(temp_dir, "policy.js")
+        with open(js_file_path, 'w') as f:
+            f.write(sensitive_req.js_program)
+
+        # Upload to S3
+        s3_key = f"policies/{package.name}/{package.version}/policy.js"
+        success = s3_helper.upload_file(js_file_path, s3_key)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to upload JS policy to S3")
+
+        s3_path = s3_helper.build_full_s3_url(s3_key)
+
+        # Update package
+        package.is_sensitive = True
+        package.js_policy_path = s3_path
+        db.commit()
+
+        logger.info(f"Model {id} marked as sensitive with JS policy by user {user.username}")
+        return {"message": "Model marked as sensitive", "js_policy_path": s3_path}
+
+    finally:
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+
+
+@app.get("/artifact/model/{id}/sensitive")
+async def get_sensitive_status(
+    
+    id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Check if a model is marked as sensitive.
+    (SECURITY TRACK)
+    """
+    # Find package
+    package = None
+    for pkg in db.query(Package).filter(Package.version == "model").all():
+        if generate_artifact_id_from_package(pkg) == id:
+            package = pkg
+            break
+        if pkg.description and f"artifact_id:{id}" in pkg.description:
+            package = pkg
+            break
+
+    if not package:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    return {
+        "is_sensitive": package.is_sensitive,
+        "has_js_policy": package.js_policy_path is not None
+    }
+
+
+# ========== Security Track: Malicious Model Detection ==========
+
+@app.get("/security/malicious-models")
+async def get_malicious_models(
+    
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """
+    Return list of models suspected to be malicious.
+    Detection criteria:
+    - Very low license score (< 0.3)
+    - Very low net score (< 0.2)
+    - Package confusion audit flags
+    (SECURITY TRACK)
+    """
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    suspicious_models = []
+
+    # Get all packages with metrics
+    packages = db.query(Package).all()
+
+    for pkg in packages:
+        reasons = []
+        is_suspicious = False
+
+        # Check metrics
+        if pkg.metrics:
+            if pkg.metrics.license_score is not None and pkg.metrics.license_score < 0.3:
+                reasons.append("Low license score")
+                is_suspicious = True
+
+            if pkg.metrics.net_score is not None and pkg.metrics.net_score < 0.2:
+                reasons.append("Low net score")
+                is_suspicious = True
+
+        # Check for package confusion audit flags
+        audit_logs = db.query(PackageConfusionAudit).filter(
+            PackageConfusionAudit.package_id == pkg.id
+        ).all()
+
+        if audit_logs:
+            reasons.append("Package confusion detected")
+            is_suspicious = True
+
+        if is_suspicious:
+            artifact_id = generate_artifact_id_from_package(pkg)
+            suspicious_models.append({
+                "artifact_id": artifact_id,
+                "name": pkg.name,
+                "version": pkg.version,
+                "reasons": reasons,
+                "upload_date": pkg.upload_date.isoformat() if pkg.upload_date else None
+            })
+
+    return suspicious_models
+
+
+# ========== Security Track: Audit Trail ==========
+
+@app.get("/security/audit-trail")
+async def get_audit_trail(
+    
+    artifact_id: Optional[str] = Query(None),
+    user_filter: Optional[str] = Query(None),
+    limit: int = Query(100, le=1000),
+    user: User = Depends(require_auth),
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive audit trail of all operations.
+    Shows what/when/who for security tracking.
+    (SECURITY TRACK)
+    """
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    audit_entries = []
+
+    # Get download history
+    downloads_query = db.query(DownloadHistory).join(Package).join(User)
+    if artifact_id:
+        downloads_query = downloads_query.filter(Package.description.like(f"%artifact_id:{artifact_id}%"))
+    if user_filter:
+        downloads_query = downloads_query.filter(User.username == user_filter)
+
+    downloads = downloads_query.order_by(DownloadHistory.download_date.desc()).limit(limit).all()
+
+    for dl in downloads:
+        if dl.package and dl.user:
+            audit_entries.append(AuditLogEntry(
+                timestamp=dl.download_date.isoformat() if dl.download_date else "",
+                user=dl.user.username,
+                action="download",
+                artifact_id=generate_artifact_id_from_package(dl.package),
+                details={"package_name": dl.package.name}
+            ))
+
+    # Get upload history (from packages table)
+    packages_query = db.query(Package).join(User, Package.uploader_id == User.id)
+    if artifact_id:
+        packages_query = packages_query.filter(Package.description.like(f"%artifact_id:{artifact_id}%"))
+    if user_filter:
+        packages_query = packages_query.filter(User.username == user_filter)
+
+    packages = packages_query.order_by(Package.upload_date.desc()).limit(limit).all()
+
+    for pkg in packages:
+        if pkg.uploader:
+            audit_entries.append(AuditLogEntry(
+                timestamp=pkg.upload_date.isoformat() if pkg.upload_date else "",
+                user=pkg.uploader.username,
+                action="upload",
+                artifact_id=generate_artifact_id_from_package(pkg),
+                details={"package_name": pkg.name, "version": pkg.version}
+            ))
+
+    # Sort all entries by timestamp
+    audit_entries.sort(key=lambda x: x.timestamp, reverse=True)
+
+    return audit_entries[:limit]
 
 
 # ========== Main Entry Point ==========
