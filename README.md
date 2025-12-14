@@ -273,7 +273,9 @@ This project is part of ECE 461 coursework at Purdue University.
 ## Contributors
 
 - Anthony Chavez
-- Team members
+- Bozidar Perovic
+- Eli Beyer
+- Mauricio Salazar
 
 ---
 
