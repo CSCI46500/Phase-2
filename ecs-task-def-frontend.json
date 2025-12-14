@@ -1,0 +1,29 @@
+{
+  "family": "model-registry-frontend",
+  "executionRoleArn": "arn:aws:iam::187641964754:role/ecsTaskExecutionRole-model-registry",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "PLACEHOLDER",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/model-registry-frontend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512"
+}
