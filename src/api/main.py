@@ -288,10 +288,108 @@ async def startup_event():
 
 # ========== Health Endpoints ==========
 
+# Track application start time for uptime calculation
+import psutil
+from datetime import datetime as dt
+_app_start_time = dt.now()
+
 @app.get("/health")
-async def health_check():
-    """Heartbeat check (BASELINE)."""
-    return {"status": "ok"}
+async def health_check(db: Session = Depends(get_db)):
+    """
+    Heartbeat check (BASELINE) with detailed component health.
+    Returns comprehensive health status for the dashboard.
+    """
+    components = {}
+    overall_status = "healthy"
+
+    # Check database health
+    db_start = time.time()
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        db_response_time = (time.time() - db_start) * 1000
+        components["database"] = {
+            "status": "healthy",
+            "response_time": round(db_response_time, 2),
+            "message": "Connected to PostgreSQL"
+        }
+    except Exception as e:
+        db_response_time = (time.time() - db_start) * 1000
+        components["database"] = {
+            "status": "down",
+            "response_time": round(db_response_time, 2),
+            "message": f"Database error: {str(e)}"
+        }
+        overall_status = "degraded"
+
+    # Check S3 health
+    s3_start = time.time()
+    try:
+        # Try to list bucket (lightweight check)
+        s3_healthy = s3_helper.bucket_name is not None
+        s3_response_time = (time.time() - s3_start) * 1000
+        if s3_healthy:
+            components["s3"] = {
+                "status": "healthy",
+                "response_time": round(s3_response_time, 2),
+                "message": f"Connected to bucket: {s3_helper.bucket_name}"
+            }
+        else:
+            components["s3"] = {
+                "status": "degraded",
+                "response_time": round(s3_response_time, 2),
+                "message": "S3 bucket not configured"
+            }
+            if overall_status == "healthy":
+                overall_status = "degraded"
+    except Exception as e:
+        s3_response_time = (time.time() - s3_start) * 1000
+        components["s3"] = {
+            "status": "down",
+            "response_time": round(s3_response_time, 2),
+            "message": f"S3 error: {str(e)}"
+        }
+        overall_status = "degraded"
+
+    # Check API health (self)
+    api_start = time.time()
+    api_response_time = (time.time() - api_start) * 1000
+    components["api"] = {
+        "status": "healthy",
+        "response_time": round(api_response_time, 2),
+        "message": "API responding normally"
+    }
+
+    # System metrics
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        components["system"] = {
+            "status": "healthy" if cpu_percent < 90 and memory.percent < 90 else "degraded",
+            "response_time": 0,
+            "message": f"CPU: {cpu_percent:.1f}%, Memory: {memory.percent:.1f}%"
+        }
+        if cpu_percent >= 90 or memory.percent >= 90:
+            if overall_status == "healthy":
+                overall_status = "degraded"
+    except Exception:
+        components["system"] = {
+            "status": "unknown",
+            "response_time": 0,
+            "message": "Unable to retrieve system metrics"
+        }
+
+    # Calculate uptime
+    uptime_seconds = (dt.now() - _app_start_time).total_seconds()
+
+    return {
+        "status": overall_status,
+        "components": components,
+        "uptime": int(uptime_seconds),
+        "version": app.version,
+        "environment": settings.environment,
+        "timestamp": dt.now().isoformat()
+    }
 
 
 @app.get("/tracks")

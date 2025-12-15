@@ -22,7 +22,7 @@
       "Bash(docker build:*)",
       "Bash(docker push:*)",
       "Bash(aws elbv2 describe-load-balancers:*)",
-      "Bash(python3 -c \"\nimport requests\n\nBASE_URL = ''http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com:8000''\n\n# Test what password the server is expecting\n# The password should be hardcoded, not from env var\nPASSWORD = ''correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages''\n\nauth_data = {\n    ''user'': {''name'': ''ece30861defaultadminuser'', ''is_admin'': True},\n    ''secret'': {''password'': PASSWORD}\n}\n\nprint(''Testing authentication...'')\nresp = requests.put(f''{BASE_URL}/authenticate'', json=auth_data)\nprint(f''Status: {resp.status_code}'')\nprint(f''Response: {resp.text}'')\n\")",
+      "Bash(python3 -c \"\nimport requests\n\nBASE_URL = ''http://model-registry-alb-1277815581.us-east-1.elb.amazonaws.com:8000''\n\n# Test what password the server is expecting\n# The password should be hardcoded, not from env var\nPASSWORD = ''correcthorsebatterystaple123(!__+@**(A''\\''\";DROP TABLE packages;''\n\nauth_data = {\n    ''user'': {''name'': ''ece30861defaultadminuser'', ''is_admin'': True},\n    ''secret'': {''password'': PASSWORD}\n}\n\nprint(''Testing authentication...'')\nresp = requests.put(f''{BASE_URL}/authenticate'', json=auth_data)\nprint(f''Status: {resp.status_code}'')\nprint(f''Response: {resp.text}'')\n\")",
       "Bash(aws logs tail:*)",
       "Bash(aws ecs list-services:*)",
       "Bash(aws ecs list-clusters:*)",

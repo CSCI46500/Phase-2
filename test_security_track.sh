@@ -8,7 +8,7 @@ set -e  # Exit on error
 
 API_URL="http://localhost:8000"
 ADMIN_USER="ece30861defaultadminuser"
-ADMIN_PASS="correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"
+ADMIN_PASS='correcthorsebatterystaple123(!__+@**(A'"'"'";DROP TABLE packages;'
 
 echo "=================================================="
 echo "Phase 2 Security Track Feature Tests"

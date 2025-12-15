@@ -1,5 +1,5 @@
 Phase 2 Model Registry - Deployment URLs
-Generated: Fri Dec 12 02:09:15 UTC 2025
+Generated: Mon Dec 15 02:11:56 UTC 2025
 
 Backend API:  http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com:8000
 Frontend UI:  http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com
