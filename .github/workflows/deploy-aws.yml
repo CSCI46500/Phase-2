@@ -237,7 +237,7 @@ jobs:
           echo "Testing authentication..."
           TOKEN=$(curl -s -X POST $API_URL/authenticate \
             -H "Content-Type: application/json" \
-            -d '{"username":"ece30861defaultadminuser","password":"correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages"}' \
+            -d '{"username":"ece30861defaultadminuser","password":"correcthorsebatterystaple123(!__+@**(A'\''\";DROP TABLE packages;"}' \
             | jq -r '.token')
 
           if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then

@@ -197,7 +197,7 @@ class TestAuthentication(BaseGUITest):
 
         # Default admin credentials from spec
         default_username = "ece30861defaultadminuser"
-        default_password = "'correcthorsebatterystaple123(!__+@**(A;DROP TABLE packages'"
+        default_password = "correcthorsebatterystaple123(!__+@**(A'\";DROP TABLE packages;"
 
         try:
             # Look for login form

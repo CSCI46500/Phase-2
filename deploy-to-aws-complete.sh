@@ -251,6 +251,23 @@ echo ""
 # Register task definitions
 echo -e "${YELLOW}Step 9: Registering ECS task definitions...${NC}"
 
+# Escape special characters for JSON embedding
+escape_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"      # Escape backslashes first
+    s="${s//\"/\\\"}"      # Escape double quotes
+    s="${s//$'\n'/\\n}"    # Escape newlines
+    s="${s//$'\r'/\\r}"    # Escape carriage returns
+    s="${s//$'\t'/\\t}"    # Escape tabs
+    printf '%s' "$s"
+}
+
+# Escape sensitive values that may contain special characters
+ESCAPED_DB_PASSWORD=$(escape_json "$DB_PASSWORD")
+ESCAPED_SECRET_KEY=$(escape_json "$SECRET_KEY")
+ESCAPED_ADMIN_USERNAME=$(escape_json "$ADMIN_USERNAME")
+ESCAPED_ADMIN_PASSWORD=$(escape_json "$ADMIN_PASSWORD")
+
 # Backend task definition
 cat > /tmp/backend-task-def.json <<EOF
 {
@@ -270,13 +287,13 @@ cat > /tmp/backend-task-def.json <<EOF
       "protocol": "tcp"
     }],
     "environment": [
-      {"name": "DATABASE_URL", "value": "postgresql://${DB_USERNAME}:${DB_PASSWORD}@${DB_ENDPOINT}:5432/${DB_NAME}"},
+      {"name": "DATABASE_URL", "value": "postgresql://${DB_USERNAME}:${ESCAPED_DB_PASSWORD}@${DB_ENDPOINT}:5432/${DB_NAME}"},
       {"name": "S3_BUCKET_NAME", "value": "${S3_BUCKET_NAME}"},
       {"name": "AWS_REGION", "value": "${AWS_REGION}"},
       {"name": "ENVIRONMENT", "value": "${ENVIRONMENT}"},
-      {"name": "SECRET_KEY", "value": "${SECRET_KEY}"},
-      {"name": "ADMIN_USERNAME", "value": "${ADMIN_USERNAME}"},
-      {"name": "ADMIN_PASSWORD", "value": "${ADMIN_PASSWORD}"}
+      {"name": "SECRET_KEY", "value": "${ESCAPED_SECRET_KEY}"},
+      {"name": "ADMIN_USERNAME", "value": "${ESCAPED_ADMIN_USERNAME}"},
+      {"name": "ADMIN_PASSWORD", "value": "${ESCAPED_ADMIN_PASSWORD}"}
     ],
     "logConfiguration": {
       "logDriver": "awslogs",

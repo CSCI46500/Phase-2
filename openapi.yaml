@@ -1,0 +1,771 @@
+openapi: 3.0.3
+info:
+  title: ECE 461 - Fall 2025 - Model Registry API
+  description: |
+    API for ECE 461/Fall 2025/Project Phase 2: A Trustworthy Model Registry.
+
+    This API provides endpoints for:
+    - Model/dataset/code artifact management
+    - Quality metrics evaluation
+    - User authentication and authorization
+    - License compatibility checking
+    - Artifact lineage tracking
+
+    ## Authentication
+    Most endpoints require authentication via the `X-Authorization` header.
+    Obtain a token by calling the `/authenticate` endpoint.
+
+    ## Security Track Features
+    - Token-based authentication (valid for 1000 calls or 10 hours)
+    - Sensitive model protection with JavaScript monitoring scripts
+    - Package confusion detection
+    - Download history tracking
+
+  version: 3.4.7
+  contact:
+    name: ECE 461 Team
+  license:
+    name: Educational Use
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: http://model-registry-alb-531271739.us-east-1.elb.amazonaws.com:8000
+    description: Production AWS deployment
+
+tags:
+  - name: Health
+    description: System health and status endpoints
+  - name: Authentication
+    description: User authentication and token management
+  - name: Artifacts
+    description: Artifact CRUD operations
+  - name: Ratings
+    description: Model quality metrics and ratings
+  - name: Lineage
+    description: Artifact lineage and relationships
+  - name: Search
+    description: Search and discovery endpoints
+  - name: System
+    description: System management endpoints
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: System health check
+      description: |
+        Returns comprehensive health status including component health,
+        response times, and system metrics.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Health status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                components:
+                  database:
+                    status: healthy
+                    response_time: 5.23
+                    message: Connected to PostgreSQL
+                  s3:
+                    status: healthy
+                    response_time: 12.5
+                    message: Connected to bucket: modelregistry-models
+                  api:
+                    status: healthy
+                    response_time: 0.1
+                    message: API responding normally
+                  system:
+                    status: healthy
+                    response_time: 0
+                    message: "CPU: 15.2%, Memory: 45.3%"
+                uptime: 3600
+                version: 3.4.7
+                environment: production
+                timestamp: "2025-12-15T00:00:00"
+
+  /tracks:
+    get:
+      tags:
+        - Health
+      summary: Get implemented feature tracks
+      description: Returns the list of feature tracks implemented in this deployment.
+      operationId: getTracks
+      responses:
+        '200':
+          description: Feature tracks retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plannedTracks:
+                    type: array
+                    items:
+                      type: string
+              example:
+                plannedTracks:
+                  - Access control track
+
+  /authenticate:
+    put:
+      tags:
+        - Authentication
+      summary: Create authentication token (PUT)
+      description: |
+        Authenticate with username and password to receive an API token.
+        Token is valid for 1000 API calls or 10 hours.
+      operationId: authenticatePut
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: string
+                description: Bearer token
+              example: "bearer abc123xyz..."
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Authentication
+      summary: Create authentication token (POST)
+      description: |
+        Authenticate with username and password to receive an API token.
+        Same as PUT method, provided for frontend compatibility.
+      operationId: authenticatePost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: string
+        '401':
+          description: Invalid credentials
+
+  /artifact/{artifact_type}:
+    post:
+      tags:
+        - Artifacts
+      summary: Create new artifact
+      description: |
+        Register a new artifact (model, dataset, or code) from a URL.
+        Supports HuggingFace and GitHub URLs.
+      operationId: createArtifact
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArtifactType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArtifactData'
+      responses:
+        '201':
+          description: Artifact created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+        '409':
+          description: Artifact already exists
+        '424':
+          description: Artifact disqualified due to low rating
+
+  /artifacts:
+    post:
+      tags:
+        - Search
+      summary: Search/list artifacts
+      description: Search for artifacts by name and type filters.
+      operationId: listArtifacts
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: string
+          description: Pagination offset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ArtifactQuery'
+      responses:
+        '200':
+          description: Artifacts found
+          headers:
+            offset:
+              schema:
+                type: string
+              description: Next page offset
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArtifactMetadata'
+
+  /artifacts/{artifact_type}/{id}:
+    get:
+      tags:
+        - Artifacts
+      summary: Get artifact by ID
+      description: Retrieve artifact details and download URL.
+      operationId: getArtifact
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArtifactType'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifact found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Artifact'
+        '404':
+          description: Artifact not found
+
+    put:
+      tags:
+        - Artifacts
+      summary: Update artifact
+      description: Update artifact content/metadata.
+      operationId: updateArtifact
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArtifactType'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Artifact'
+      responses:
+        '200':
+          description: Artifact updated
+        '403':
+          description: Authentication required
+        '404':
+          description: Artifact not found
+
+    delete:
+      tags:
+        - Artifacts
+      summary: Delete artifact
+      description: Remove artifact from registry.
+      operationId: deleteArtifact
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArtifactType'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifact deleted
+        '404':
+          description: Artifact not found
+
+  /artifact/model/{id}/rate:
+    get:
+      tags:
+        - Ratings
+      summary: Get model ratings
+      description: |
+        Retrieve comprehensive quality metrics for a model.
+        Returns 11 metrics with scores and latencies.
+      operationId: getModelRating
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ratings retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRating'
+        '404':
+          description: Model not found
+        '500':
+          description: Rating not available
+
+  /artifact/model/{id}/lineage:
+    get:
+      tags:
+        - Lineage
+      summary: Get model lineage graph
+      description: Retrieve the lineage/derivation graph for a model.
+      operationId: getModelLineage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lineage graph retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactLineageGraph'
+        '404':
+          description: Model not found
+
+  /artifact/{artifact_type}/{id}/cost:
+    get:
+      tags:
+        - Artifacts
+      summary: Get artifact cost
+      description: Get the cost (size in MB) of an artifact and optionally its dependencies.
+      operationId: getArtifactCost
+      parameters:
+        - name: artifact_type
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ArtifactType'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: dependency
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include dependency costs
+      responses:
+        '200':
+          description: Cost retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    total_cost:
+                      type: number
+                    standalone_cost:
+                      type: number
+        '404':
+          description: Artifact not found
+
+  /artifact/model/{id}/license-check:
+    post:
+      tags:
+        - Artifacts
+      summary: Check license compatibility
+      description: Check if a GitHub repository license is compatible with the model.
+      operationId: checkLicenseCompatibility
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                github_url:
+                  type: string
+                  format: uri
+              required:
+                - github_url
+      responses:
+        '200':
+          description: License compatibility result
+          content:
+            application/json:
+              schema:
+                type: boolean
+        '404':
+          description: Model not found
+
+  /artifact/byRegEx:
+    post:
+      tags:
+        - Search
+      summary: Search by regex
+      description: Find artifacts matching a regular expression pattern.
+      operationId: searchByRegex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                regex:
+                  type: string
+              required:
+                - regex
+      responses:
+        '200':
+          description: Matching artifacts found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArtifactMetadata'
+        '400':
+          description: Invalid regex pattern
+        '404':
+          description: No artifacts found matching regex
+
+  /artifact/byName/{name}:
+    get:
+      tags:
+        - Search
+      summary: Get artifact by name
+      description: Find artifacts by exact or similar name.
+      operationId: getArtifactByName
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Artifacts found
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArtifactMetadata'
+        '404':
+          description: No artifacts found with this name
+
+  /reset:
+    delete:
+      tags:
+        - System
+      summary: Reset registry
+      description: |
+        Reset the registry to default state.
+        Deletes all artifacts and resets database.
+      operationId: resetRegistry
+      responses:
+        '200':
+          description: Registry reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '500':
+          description: Reset failed
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: apiKey
+      in: header
+      name: X-Authorization
+      description: Bearer token from /authenticate endpoint
+
+  schemas:
+    ArtifactType:
+      type: string
+      enum:
+        - model
+        - dataset
+        - code
+      description: Type of artifact
+
+    ArtifactQuery:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name pattern to search (use * for all)
+        types:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactType'
+      required:
+        - name
+
+    ArtifactData:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Source URL (HuggingFace or GitHub)
+        name:
+          type: string
+          description: Optional custom name
+        download_url:
+          type: string
+          format: uri
+          description: Pre-signed download URL (in responses)
+      required:
+        - url
+
+    ArtifactMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        id:
+          type: string
+        type:
+          $ref: '#/components/schemas/ArtifactType'
+      required:
+        - name
+        - id
+        - type
+
+    Artifact:
+      type: object
+      properties:
+        metadata:
+          $ref: '#/components/schemas/ArtifactMetadata'
+        data:
+          $ref: '#/components/schemas/ArtifactData'
+      required:
+        - metadata
+        - data
+
+    AuthenticationRequest:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            name:
+              type: string
+            is_admin:
+              type: boolean
+          required:
+            - name
+            - is_admin
+        secret:
+          type: object
+          properties:
+            password:
+              type: string
+          required:
+            - password
+      required:
+        - user
+        - secret
+
+    SizeScore:
+      type: object
+      properties:
+        raspberry_pi:
+          type: number
+          minimum: 0
+          maximum: 1
+        jetson_nano:
+          type: number
+          minimum: 0
+          maximum: 1
+        desktop_pc:
+          type: number
+          minimum: 0
+          maximum: 1
+        aws_server:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    ModelRating:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        net_score:
+          type: number
+        net_score_latency:
+          type: number
+        ramp_up_time:
+          type: number
+        ramp_up_time_latency:
+          type: number
+        bus_factor:
+          type: number
+        bus_factor_latency:
+          type: number
+        performance_claims:
+          type: number
+        performance_claims_latency:
+          type: number
+        license:
+          type: number
+        license_latency:
+          type: number
+        dataset_and_code_score:
+          type: number
+        dataset_and_code_score_latency:
+          type: number
+        dataset_quality:
+          type: number
+        dataset_quality_latency:
+          type: number
+        code_quality:
+          type: number
+        code_quality_latency:
+          type: number
+        reproducibility:
+          type: number
+        reproducibility_latency:
+          type: number
+        reviewedness:
+          type: number
+        reviewedness_latency:
+          type: number
+        tree_score:
+          type: number
+        tree_score_latency:
+          type: number
+        size_score:
+          $ref: '#/components/schemas/SizeScore'
+        size_score_latency:
+          type: number
+
+    ArtifactLineageNode:
+      type: object
+      properties:
+        artifact_id:
+          type: string
+        name:
+          type: string
+        source:
+          type: string
+        metadata:
+          type: object
+
+    ArtifactLineageEdge:
+      type: object
+      properties:
+        from_node_artifact_id:
+          type: string
+        to_node_artifact_id:
+          type: string
+        relationship:
+          type: string
+
+    ArtifactLineageGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactLineageNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactLineageEdge'
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - down
+            - unknown
+        components:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+              response_time:
+                type: number
+              message:
+                type: string
+        uptime:
+          type: integer
+          description: Uptime in seconds
+        version:
+          type: string
+        environment:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
