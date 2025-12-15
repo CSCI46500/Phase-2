@@ -69,6 +69,7 @@ class ArtifactQuery(BaseModel):
 
 class ArtifactData(BaseModel):
     url: str
+    name: Optional[str] = None
     download_url: Optional[str] = None
 
 
@@ -434,8 +435,12 @@ async def create_artifact(
     url = artifact_data.url
     logger.info(f"Ingesting {artifact_type.value} from URL: {url}")
 
-    # Extract name from URL
-    name = extract_name_from_url(url)
+    if artifact_data.name:
+        name = artifact_data.name
+        logger.info(f"Using provided name: {name}")
+    else:
+        name = extract_name_from_url(url)
+        logger.info(f"Extracted name from URL: {name}")
 
     # Check if artifact already exists with same name and type
     existing = db.query(Package).filter(
